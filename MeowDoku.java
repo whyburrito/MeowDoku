@@ -1,36 +1,49 @@
-// ============================================================================
-// MeowDoku Console Edition - Java Implementation
-// MeowdoCrew | CS208 - Programming Languages
-// ============================================================================
-// A lightweight, single-player logic puzzle game played in the terminal.
-// Place exactly one cat (C) per row, column, and region.
-// No two cats may be adjacent (including diagonally).
-// Use elimination marks (X) to help deduce the solution.
-// ============================================================================
-
-import java.util.Scanner;
-
+import java.io.BufferedReader;
+import java.io.FileDescriptor;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.PrintStream;
+import java.io.UnsupportedEncodingException;
 public class MeowDoku {
-
-    // -----------------------------------------------------------------------
-    // Constants
-    // -----------------------------------------------------------------------
-    static final char EMPTY = '.';
-    static final char CAT   = 'C';
-    static final char MARK  = 'X';
-    static final String REGION_LABELS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-
-    // -----------------------------------------------------------------------
-    // Puzzle data
-    // -----------------------------------------------------------------------
-    static final String[] PUZZLE_NAMES = {
+    private static final String RESET = "\u001B[0m";
+    private static final String BOLD = "\u001B[1m";
+    private static final String DIM = "\u001B[2m";
+    private static final String WHITE = "\u001B[97m";
+    private static final String CYAN = "\u001B[96m";
+    private static final String BLUE = "\u001B[94m";
+    private static final String GREEN = "\u001B[92m";
+    private static final String YELLOW = "\u001B[93m";
+    private static final String RED = "\u001B[91m";
+    private static final String MAGENTA = "\u001B[95m";
+    private static final String GRAY = "\u001B[90m";
+    private static final String SELECTED_BG = "\u001B[48;5;57m";
+    private static final String BORDER_COLOR = "\u001B[38;5;39m";
+    private static final String[] REGION_COLORS = {
+        "\u001B[38;5;45m",
+        "\u001B[38;5;213m",
+        "\u001B[38;5;220m",
+        "\u001B[38;5;114m",
+        "\u001B[38;5;141m",
+        "\u001B[38;5;208m",
+        "\u001B[38;5;81m"
+    };
+    private static final char EMPTY = '.';
+    private static final char CAT = 'C';
+    private static final char MARK = 'X';
+    private static final String CAT_EMOJI = "\uD83D\uDC31";
+    private static final String REGION_LABELS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    private static final String GAME_KEYS = "WASDCXEVRHQ";
+    private static final BufferedReader CONSOLE_READER =
+            new BufferedReader(new InputStreamReader(System.in));
+    private static final boolean IS_WINDOWS =
+            System.getProperty("os.name", "").toLowerCase().contains("win");
+    private static final String[] PUZZLE_NAMES = {
         "Kitten's First Steps (5x5 Easy)",
         "Cat Nap Challenge (6x6 Medium)",
         "Meow Master (7x7 Hard)"
     };
-
-    static final int[][][] PUZZLE_REGIONS = {
-        // Puzzle 1: 5x5 Easy
+    private static final int[][][] PUZZLE_REGIONS = {
         {
             {0, 0, 1, 1, 1},
             {0, 0, 0, 1, 1},
@@ -38,7 +51,6 @@ public class MeowDoku {
             {2, 2, 4, 4, 3},
             {2, 4, 4, 4, 3}
         },
-        // Puzzle 2: 6x6 Medium
         {
             {0, 0, 1, 1, 2, 2},
             {0, 0, 1, 1, 2, 2},
@@ -47,7 +59,6 @@ public class MeowDoku {
             {3, 5, 5, 5, 4, 4},
             {3, 5, 5, 5, 4, 4}
         },
-        // Puzzle 3: 7x7 Hard
         {
             {0, 0, 0, 1, 1, 2, 2},
             {0, 3, 0, 1, 1, 2, 2},
@@ -58,415 +69,430 @@ public class MeowDoku {
             {6, 6, 6, 6, 5, 5, 5}
         }
     };
-
-    // -----------------------------------------------------------------------
-    // Game state
-    // -----------------------------------------------------------------------
-    private int size;
-    private int[][] regionMap;
-    private char[][] board;
-    private int numRegions;
-
-    // -----------------------------------------------------------------------
-    // Constructor
-    // -----------------------------------------------------------------------
-    public MeowDoku(int puzzleIndex) {
-        this.regionMap = PUZZLE_REGIONS[puzzleIndex];
-        this.size = regionMap.length;
-        this.board = new char[size][size];
-
-        // Initialize board with empty cells
-        for (int r = 0; r < size; r++)
-            for (int c = 0; c < size; c++)
-                board[r][c] = EMPTY;
-
-        // Count regions
-        numRegions = 0;
-        for (int r = 0; r < size; r++)
-            for (int c = 0; c < size; c++)
-                if (regionMap[r][c] + 1 > numRegions)
-                    numRegions = regionMap[r][c] + 1;
-    }
-
-    // -----------------------------------------------------------------------
-    // Display the board
-    // -----------------------------------------------------------------------
-    public void display() {
-        System.out.println();
-
-        // Column header
-        System.out.print("     ");
-        for (int c = 0; c < size; c++)
-            System.out.print(" " + (c + 1) + "  ");
-        System.out.println();
-
-        // Top border
-        System.out.print("   +");
-        for (int c = 0; c < size; c++)
-            System.out.print("---+");
-        System.out.println();
-
-        for (int r = 0; r < size; r++) {
-            // Row label
-            System.out.print(" " + (char)('A' + r) + " |");
-            for (int c = 0; c < size; c++) {
-                char cellChar = board[r][c];
-                if (cellChar == CAT) {
-                    System.out.print(" C |");
-                } else if (cellChar == MARK) {
-                    System.out.print(" X |");
-                } else {
-                    System.out.print(" " + REGION_LABELS.charAt(regionMap[r][c]) + " |");
-                }
+    private final int size;
+    private final int[][] regionMap;
+    private final char[][] board;
+    private final int numRegions;
+    private int cursorRow = 0;
+    private int cursorCol = 0;
+    private boolean running = true;
+    private String statusMessage = "Welcome! Use W/A/S/D to move, then C to place a cat.";
+    private String statusColor = CYAN;
+    private MeowDoku(int puzzleIndex) {
+        if (puzzleIndex < 0 || puzzleIndex >= PUZZLE_REGIONS.length) {
+            throw new IllegalArgumentException("Invalid puzzle index.");
+        }
+        regionMap = PUZZLE_REGIONS[puzzleIndex];
+        size = regionMap.length;
+        board = new char[size][size];
+        for (int row = 0; row < size; row++) {
+            for (int col = 0; col < size; col++) {
+                board[row][col] = EMPTY;
             }
-            System.out.println();
-
-            // Row border
-            System.out.print("   +");
-            for (int c = 0; c < size; c++)
-                System.out.print("---+");
-            System.out.println();
         }
-
-        // Region legend
-        System.out.print("\n   Regions: ");
-        for (int i = 0; i < numRegions; i++) {
-            if (i > 0) System.out.print(", ");
-            System.out.print(REGION_LABELS.charAt(i));
+        int highestRegion = -1;
+        for (int row = 0; row < size; row++) {
+            for (int col = 0; col < size; col++) {
+                highestRegion = Math.max(highestRegion, regionMap[row][col]);
+            }
         }
-        System.out.println();
+        numRegions = highestRegion + 1;
     }
-
-    // -----------------------------------------------------------------------
-    // Bounds check
-    // -----------------------------------------------------------------------
-    private boolean inBounds(int row, int col) {
-        return row >= 0 && row < size && col >= 0 && col < size;
-    }
-
-    // -----------------------------------------------------------------------
-    // Place a cat (toggle)
-    // -----------------------------------------------------------------------
-    public boolean placeCat(int row, int col) {
-        if (!inBounds(row, col)) {
-            System.out.println("   [!] Position out of bounds.");
-            return false;
-        }
+    private String getCellDisplay(int row, int col) {
         if (board[row][col] == CAT) {
-            System.out.println("   [!] A cat is already here! Removing it.");
-            board[row][col] = EMPTY;
-            return true;
-        }
-        board[row][col] = CAT;
-        return true;
-    }
-
-    // -----------------------------------------------------------------------
-    // Place an elimination mark (toggle)
-    // -----------------------------------------------------------------------
-    public boolean placeMark(int row, int col) {
-        if (!inBounds(row, col)) {
-            System.out.println("   [!] Position out of bounds.");
-            return false;
-        }
-        if (board[row][col] == CAT) {
-            System.out.println("   [!] Remove the cat first before marking.");
-            return false;
+            return CAT_EMOJI;
         }
         if (board[row][col] == MARK) {
-            System.out.println("   [!] Mark removed.");
+            return "X";
+        }
+        return String.valueOf(REGION_LABELS.charAt(regionMap[row][col]));
+    }
+    private String formatCell(String symbol) {
+        if (CAT_EMOJI.equals(symbol)) {
+            return " " + symbol + "  ";
+        }
+        return "  " + symbol + "  ";
+    }
+    private static void clearScreen() {
+        System.out.print("\u001B[2J\u001B[H");
+        System.out.flush();
+    }
+    private static void displayTitle() {
+        System.out.println(CYAN + BOLD + "  +------------------------------------------------------+" + RESET);
+        System.out.println(CYAN + BOLD + "  |" + RESET + "                                                      " + CYAN + BOLD + "|" + RESET);
+        System.out.println(CYAN + BOLD + "  |" + RESET + GREEN + "       /\\_/\\       M E O W D O K U                 " + CYAN + BOLD + "|" + RESET);
+        System.out.println(CYAN + BOLD + "  |" + RESET + GREEN + "      ( o.o )      " + MAGENTA + BOLD + "COLOR TERMINAL EDITION" + RESET + "   " + CYAN + BOLD + "|" + RESET);
+        System.out.println(CYAN + BOLD + "  |" + RESET + GREEN + "       > ^ <       " + WHITE + "A Cat Placement Puzzle" + RESET + "      " + CYAN + BOLD + "|" + RESET);
+        System.out.println(CYAN + BOLD + "  |" + RESET + "                                                      " + CYAN + BOLD + "|" + RESET);
+        System.out.println(CYAN + BOLD + "  +------------------------------------------------------+" + RESET);
+        System.out.println();
+    }
+    private void displayBoard() {
+        System.out.println(CYAN + BOLD + "  MEOWDOKU" + RESET + WHITE + "  |  " + size + "x" + size + " PUZZLE" + RESET);
+        System.out.println(DIM + "  Move the purple selection with W/A/S/D, then choose an action." + RESET);
+        System.out.println();
+        System.out.print("       ");
+        for (int col = 0; col < size; col++) {
+            System.out.printf(BLUE + BOLD + " %2d  " + RESET, col + 1);
+        }
+        System.out.println();
+        printBorder();
+        for (int row = 0; row < size; row++) {
+            System.out.print("  " + MAGENTA + BOLD + (char) ('A' + row) + RESET + "  " + BORDER_COLOR + "|" + RESET);
+            for (int col = 0; col < size; col++) {
+                String symbol = getCellDisplay(row, col);
+                String symbolColor = getSymbolColor(row, col);
+                if (row == cursorRow && col == cursorCol) {
+                    System.out.print(SELECTED_BG + WHITE + BOLD + formatCell(symbol) + RESET);
+                } else {
+                    System.out.print(symbolColor + BOLD + formatCell(symbol) + RESET);
+                }
+                System.out.print(BORDER_COLOR + "|" + RESET);
+            }
+            System.out.println();
+            printBorder();
+        }
+        System.out.print("\n  " + WHITE + BOLD + "REGIONS  " + RESET);
+        for (int i = 0; i < numRegions; i++) {
+            if (i > 0) System.out.print(GRAY + "  " + RESET);
+            System.out.print(REGION_COLORS[i % REGION_COLORS.length] + BOLD
+                    + REGION_LABELS.charAt(i) + RESET);
+        }
+        System.out.println();
+        System.out.println("\n" + CYAN + BOLD + "  CONTROLS" + RESET);
+        System.out.println("  " + YELLOW + "W / A / S / D" + RESET + "  Move selection (up / left / down / right)");
+        System.out.println("  " + GREEN + "C" + RESET + "              Place or remove a " + CAT_EMOJI + " cat");
+        System.out.println("  " + YELLOW + "X" + RESET + "              Place or remove an elimination mark");
+        System.out.println("  " + RED + "E" + RESET + "              Clear the selected cell");
+        System.out.println("  " + CYAN + "V" + RESET + "              Check the puzzle");
+        System.out.println("  " + MAGENTA + "R" + RESET + "              Reset the board");
+        System.out.println("  " + BLUE + "H" + RESET + "              Show the rules");
+        System.out.println("  " + GRAY + "Q" + RESET + "              Quit the game");
+        System.out.println();
+        System.out.println("  " + WHITE + BOLD + "STATUS  " + RESET + statusColor + statusMessage + RESET);
+        System.out.print("\n  " + DIM + "Press a key: " + RESET);
+        System.out.flush();
+    }
+    private void printBorder() {
+        System.out.print("     " + BORDER_COLOR + "+" + RESET);
+        for (int col = 0; col < size; col++) {
+            System.out.print(BORDER_COLOR + "-----+" + RESET);
+        }
+        System.out.println();
+    }
+    private String getSymbolColor(int row, int col) {
+        if (board[row][col] == CAT) return GREEN;
+        if (board[row][col] == MARK) return YELLOW;
+        return REGION_COLORS[regionMap[row][col] % REGION_COLORS.length];
+    }
+    private void setStatus(String message, String color) {
+        statusMessage = message;
+        statusColor = color;
+    }
+    private void moveCursor(int rowChange, int colChange) {
+        int oldRow = cursorRow;
+        int oldCol = cursorCol;
+        cursorRow = Math.max(0, Math.min(size - 1, cursorRow + rowChange));
+        cursorCol = Math.max(0, Math.min(size - 1, cursorCol + colChange));
+        if (oldRow == cursorRow && oldCol == cursorCol) {
+            setStatus("You are at the edge of the board.", YELLOW);
+        } else {
+            setStatus("Selected cell: " + coordinate(cursorRow, cursorCol), CYAN);
+        }
+    }
+    private void placeCat(int row, int col) {
+        if (board[row][col] == CAT) {
             board[row][col] = EMPTY;
-            return true;
+            setStatus("Cat removed from " + coordinate(row, col) + ".", YELLOW);
+        } else {
+            board[row][col] = CAT;
+            setStatus("Cat placed at " + coordinate(row, col) + ".", GREEN);
         }
-        board[row][col] = MARK;
-        return true;
     }
-
-    // -----------------------------------------------------------------------
-    // Clear a cell
-    // -----------------------------------------------------------------------
-    public boolean clearCell(int row, int col) {
-        if (!inBounds(row, col)) {
-            System.out.println("   [!] Position out of bounds.");
-            return false;
+    private void placeMark(int row, int col) {
+        if (board[row][col] == CAT) {
+            setStatus("Remove the cat before placing a mark.", RED);
+            return;
         }
+        if (board[row][col] == MARK) {
+            board[row][col] = EMPTY;
+            setStatus("Mark removed from " + coordinate(row, col) + ".", YELLOW);
+        } else {
+            board[row][col] = MARK;
+            setStatus("Elimination mark placed at " + coordinate(row, col) + ".", YELLOW);
+        }
+    }
+    private void clearCell(int row, int col) {
         board[row][col] = EMPTY;
-        return true;
+        setStatus("Cell " + coordinate(row, col) + " cleared.", CYAN);
     }
-
-    // -----------------------------------------------------------------------
-    // Reset the board
-    // -----------------------------------------------------------------------
-    public void resetBoard() {
-        for (int r = 0; r < size; r++)
-            for (int c = 0; c < size; c++)
-                board[r][c] = EMPTY;
-        System.out.println("   Board has been reset.");
+    private void resetBoard() {
+        for (int row = 0; row < size; row++) {
+            for (int col = 0; col < size; col++) {
+                board[row][col] = EMPTY;
+            }
+        }
+        cursorRow = 0;
+        cursorCol = 0;
+        setStatus("Board has been reset.", GREEN);
     }
-
-    // -----------------------------------------------------------------------
-    // Validate the board; returns true if the puzzle is solved
-    // -----------------------------------------------------------------------
-    public boolean validate(boolean verbose) {
+    private String coordinate(int row, int col) {
+        return "" + (char) ('A' + row) + (col + 1);
+    }
+    private boolean validate(boolean verbose) {
         boolean valid = true;
         int totalCats = 0;
-
-        // Check rows
-        for (int r = 0; r < size; r++) {
+        for (int row = 0; row < size; row++) {
             int count = 0;
-            for (int c = 0; c < size; c++)
-                if (board[r][c] == CAT) count++;
+            for (int col = 0; col < size; col++) {
+                if (board[row][col] == CAT) count++;
+            }
             totalCats += count;
             if (count > 1) {
-                if (verbose)
-                    System.out.println("   [!] Row " + (char)('A' + r) + " has more than one cat!");
+                if (verbose) System.out.println(RED + "  [!] Row " + (char) ('A' + row)
+                        + " has more than one cat." + RESET);
                 valid = false;
             }
         }
-
-        // Check columns
-        for (int c = 0; c < size; c++) {
+        for (int col = 0; col < size; col++) {
             int count = 0;
-            for (int r = 0; r < size; r++)
-                if (board[r][c] == CAT) count++;
+            for (int row = 0; row < size; row++) {
+                if (board[row][col] == CAT) count++;
+            }
             if (count > 1) {
-                if (verbose)
-                    System.out.println("   [!] Column " + (c + 1) + " has more than one cat!");
+                if (verbose) System.out.println(RED + "  [!] Column " + (col + 1)
+                        + " has more than one cat." + RESET);
                 valid = false;
             }
         }
-
-        // Check regions
         int[] regionCount = new int[numRegions];
-        for (int r = 0; r < size; r++)
-            for (int c = 0; c < size; c++)
-                if (board[r][c] == CAT)
-                    regionCount[regionMap[r][c]]++;
-        for (int i = 0; i < numRegions; i++) {
-            if (regionCount[i] > 1) {
-                if (verbose)
-                    System.out.println("   [!] Region " + REGION_LABELS.charAt(i) + " has more than one cat!");
+        for (int row = 0; row < size; row++) {
+            for (int col = 0; col < size; col++) {
+                if (board[row][col] == CAT) regionCount[regionMap[row][col]]++;
+            }
+        }
+        for (int region = 0; region < numRegions; region++) {
+            if (regionCount[region] > 1) {
+                if (verbose) System.out.println(RED + "  [!] Region "
+                        + REGION_LABELS.charAt(region) + " has more than one cat." + RESET);
                 valid = false;
             }
         }
-
-        // Check adjacency
-        int[] dr = {-1, -1, -1, 0, 0, 1, 1, 1};
-        int[] dc = {-1, 0, 1, -1, 1, -1, 0, 1};
-        for (int r = 0; r < size; r++) {
-            for (int c = 0; c < size; c++) {
-                if (board[r][c] == CAT) {
-                    for (int d = 0; d < 8; d++) {
-                        int nr = r + dr[d];
-                        int nc = c + dc[d];
-                        if (inBounds(nr, nc) && board[nr][nc] == CAT) {
-                            if (verbose)
-                                System.out.println("   [!] Cats at " + (char)('A' + r) + (c + 1)
-                                    + " and " + (char)('A' + nr) + (nc + 1) + " are adjacent!");
-                            valid = false;
-                        }
+        int[][] directions = {{0, 1}, {1, -1}, {1, 0}, {1, 1}};
+        for (int row = 0; row < size; row++) {
+            for (int col = 0; col < size; col++) {
+                if (board[row][col] != CAT) continue;
+                for (int[] direction : directions) {
+                    int nextRow = row + direction[0];
+                    int nextCol = col + direction[1];
+                    if (nextRow >= 0 && nextRow < size
+                            && nextCol >= 0 && nextCol < size
+                            && board[nextRow][nextCol] == CAT) {
+                        if (verbose) System.out.println(RED + "  [!] Cats at "
+                                + coordinate(row, col) + " and "
+                                + coordinate(nextRow, nextCol) + " are adjacent." + RESET);
+                        valid = false;
                     }
                 }
             }
         }
-
-        // Win check
-        if (valid && totalCats == size) {
-            return true;
+        if (valid && totalCats == size) return true;
+        if (verbose) {
+            if (valid) {
+                System.out.println(GREEN + "  [i] No rule violations. Place "
+                        + (size - totalCats) + " more cat(s) to win." + RESET);
+            } else {
+                System.out.println(YELLOW + "  [i] Fix the rule violations and check again." + RESET);
+            }
         }
-
-        if (valid && totalCats < size && verbose) {
-            System.out.println("   [i] No rule violations so far. Place "
-                + (size - totalCats) + " more cat(s) to win!");
-        }
-
         return false;
     }
-
-    // -----------------------------------------------------------------------
-    // Parse coordinate (e.g., "A1" -> row=0, col=0)
-    // Returns int[]{row, col} or null on failure
-    // -----------------------------------------------------------------------
-    public static int[] parseCoord(String input, int size) {
-        input = input.trim().toUpperCase();
-        if (input.length() < 2) return null;
-
-        char rowChar = input.charAt(0);
-        if (rowChar < 'A' || rowChar >= 'A' + size) return null;
-
-        String colStr = input.substring(1);
-        try {
-            int col = Integer.parseInt(colStr) - 1;
-            if (col < 0 || col >= size) return null;
-            return new int[]{rowChar - 'A', col};
-        } catch (NumberFormatException e) {
-            return null;
-        }
-    }
-
-    // -----------------------------------------------------------------------
-    // Display title
-    // -----------------------------------------------------------------------
-    public static void displayTitle() {
-        System.out.println();
-        System.out.println("  +====================================================+");
-        System.out.println("  |                                                    |");
-        System.out.println("  |      /\\_/\\    M E O W D O K U                      |");
-        System.out.println("  |     ( o.o )   Console Edition                      |");
-        System.out.println("  |      > ^ <                                         |");
-        System.out.println("  |     /|   |\\   A Cat Placement Puzzle               |");
-        System.out.println("  |                                                    |");
-        System.out.println("  |   MeowdoCrew | CS208 - Programming Languages      |");
-        System.out.println("  |                                                    |");
-        System.out.println("  +====================================================+");
-        System.out.println();
-    }
-
-    // -----------------------------------------------------------------------
-    // Display rules
-    // -----------------------------------------------------------------------
-    public static void displayRules() {
-        System.out.println();
-        System.out.println("  ===== HOW TO PLAY =====");
-        System.out.println();
-        System.out.println("  Goal: Place exactly ONE cat (C) in each row, column,");
-        System.out.println("        and region of the grid.");
-        System.out.println();
-        System.out.println("  Rules:");
-        System.out.println("    1. Each ROW must contain exactly one cat.");
-        System.out.println("    2. Each COLUMN must contain exactly one cat.");
-        System.out.println("    3. Each REGION (marked by letters A, B, C...) must");
-        System.out.println("       contain exactly one cat.");
-        System.out.println("    4. No two cats can be ADJACENT to each other");
-        System.out.println("       (horizontally, vertically, or diagonally).");
-        System.out.println();
-        System.out.println("  Commands:");
-        System.out.println("    c <pos>   - Place/remove a cat (e.g., c A1)");
-        System.out.println("    x <pos>   - Place/remove an elimination mark (e.g., x B3)");
-        System.out.println("    e <pos>   - Clear a cell (e.g., e C2)");
-        System.out.println("    check     - Validate your current board");
-        System.out.println("    reset     - Clear the entire board");
-        System.out.println("    rules     - Show these rules again");
-        System.out.println("    quit      - Exit the game");
-        System.out.println();
-    }
-
-    // -----------------------------------------------------------------------
-    // Display win message
-    // -----------------------------------------------------------------------
-    public static void displayWin() {
-        System.out.println();
-        System.out.println("  +============================================+");
-        System.out.println("  |                                            |");
-        System.out.println("  |    /\\_/\\   CONGRATULATIONS!                |");
-        System.out.println("  |   ( ^.^ )  You solved the puzzle!         |");
-        System.out.println("  |    > ^ <   All cats are happy! =^.^=      |");
-        System.out.println("  |                                            |");
-        System.out.println("  +============================================+");
-    }
-
-    // -----------------------------------------------------------------------
-    // Main
-    // -----------------------------------------------------------------------
-    public static void main(String[] args) {
-        Scanner scanner = new Scanner(System.in);
+    private void displayRules() {
+        clearScreen();
         displayTitle();
-
-        // Puzzle selection
-        System.out.println("  Select a puzzle:");
+        System.out.println(CYAN + BOLD + "  HOW TO PLAY" + RESET);
+        System.out.println("  1. Place exactly " + GREEN + "ONE " + CAT_EMOJI + " cat" + RESET + " in each row.");
+        System.out.println("  2. Place exactly " + GREEN + "ONE " + CAT_EMOJI + " cat" + RESET + " in each column.");
+        System.out.println("  3. Place exactly " + GREEN + "ONE " + CAT_EMOJI + " cat" + RESET + " in each region.");
+        System.out.println("  4. No two cats may touch, including diagonally.");
         System.out.println();
-        for (int i = 0; i < PUZZLE_NAMES.length; i++) {
-            System.out.println("    " + (i + 1) + ". " + PUZZLE_NAMES[i]);
+        System.out.println("  Empty cells show their region letter.");
+        System.out.println("  The selected cell has a purple background.");
+        System.out.println();
+        System.out.println(DIM + "  Press any game-control key to return to the puzzle." + RESET);
+        readKey(GAME_KEYS);
+    }
+    private void handleWin() {
+        clearScreen();
+        displayTitle();
+        displayBoardWithoutControls();
+        System.out.println();
+        System.out.println(GREEN + BOLD + "  +----------------------------------------------+");
+        System.out.println("  |             CONGRATULATIONS!                 |");
+        System.out.println("  |          You solved the puzzle!              |");
+        System.out.println("  |           All cats are happy!                |");
+        System.out.println("  +----------------------------------------------+" + RESET);
+        System.out.println();
+        System.out.print(WHITE + BOLD + "  Play this puzzle again? (Y/N): " + RESET);
+        System.out.flush();
+        char answer = readKey("YN");
+        if (answer == 'Y') {
+            resetBoard();
+        } else {
+            running = false;
         }
-        System.out.print("\n  Enter choice (1-" + PUZZLE_NAMES.length + "): ");
-
-        int choice;
-        try {
-            choice = Integer.parseInt(scanner.nextLine().trim());
-        } catch (NumberFormatException e) {
-            choice = 0;
+    }
+    private void displayBoardWithoutControls() {
+        System.out.println(CYAN + BOLD + "  SOLVED PUZZLE" + RESET);
+        System.out.print("       ");
+        for (int col = 0; col < size; col++) {
+            System.out.printf(BLUE + BOLD + " %2d  " + RESET, col + 1);
         }
-
-        if (choice < 1 || choice > PUZZLE_NAMES.length) {
-            System.out.println("  Invalid choice. Defaulting to puzzle 1.");
-            choice = 1;
+        System.out.println();
+        printBorder();
+        for (int row = 0; row < size; row++) {
+            System.out.print("  " + MAGENTA + BOLD + (char) ('A' + row) + RESET + "  " + BORDER_COLOR + "|" + RESET);
+            for (int col = 0; col < size; col++) {
+                String symbol = getCellDisplay(row, col);
+                System.out.print(getSymbolColor(row, col) + BOLD + formatCell(symbol) + RESET);
+                System.out.print(BORDER_COLOR + "|" + RESET);
+            }
+            System.out.println();
+            printBorder();
         }
-
-        MeowDoku game = new MeowDoku(choice - 1);
-        System.out.println("\n  Loading: " + PUZZLE_NAMES[choice - 1]);
-        displayRules();
-
-        // Game loop
-        boolean running = true;
+    }
+    private void play() {
+        running = true;
         while (running) {
-            game.display();
-            System.out.print("\n  >> ");
-
-            if (!scanner.hasNextLine()) break;
-            String line = scanner.nextLine().trim();
-            if (line.isEmpty()) continue;
-
-            String lineLower = line.toLowerCase();
-
-            if (lineLower.equals("quit") || lineLower.equals("exit") || lineLower.equals("q")) {
-                System.out.println("\n  Thanks for playing MeowDoku! Goodbye! =^.^=\n");
-                running = false;
-
-            } else if (lineLower.equals("rules") || lineLower.equals("help") || lineLower.equals("h")) {
-                displayRules();
-
-            } else if (lineLower.equals("reset")) {
-                game.resetBoard();
-
-            } else if (lineLower.equals("check") || lineLower.equals("validate")) {
-                System.out.println();
-                if (game.validate(true)) {
-                    displayWin();
-                    System.out.print("\n  Play again? (y/n): ");
-                    String answer = scanner.hasNextLine() ? scanner.nextLine().trim() : "n";
-                    if (answer.isEmpty() || Character.toLowerCase(answer.charAt(0)) != 'y') {
-                        running = false;
+            clearScreen();
+            displayTitle();
+            displayBoard();
+            char key = readKey(GAME_KEYS);
+            switch (key) {
+                case 'W': moveCursor(-1, 0); break;
+                case 'A': moveCursor(0, -1); break;
+                case 'S': moveCursor(1, 0); break;
+                case 'D': moveCursor(0, 1); break;
+                case 'C':
+                    placeCat(cursorRow, cursorCol);
+                    if (validate(false)) handleWin();
+                    break;
+                case 'X': placeMark(cursorRow, cursorCol); break;
+                case 'E': clearCell(cursorRow, cursorCol); break;
+                case 'V':
+                    if (validate(false)) {
+                        handleWin();
                     } else {
-                        game.resetBoard();
+                        showCheckResults();
                     }
-                }
-
-            } else if (lineLower.length() >= 3 && " ".equals(lineLower.substring(1, 2))
-                       && "cxe".indexOf(lineLower.charAt(0)) >= 0) {
-
-                char cmd = lineLower.charAt(0);
-                String coordStr = line.substring(2).trim();
-                int[] coord = parseCoord(coordStr, game.size);
-
-                if (coord != null) {
-                    boolean success = false;
-                    switch (cmd) {
-                        case 'c': success = game.placeCat(coord[0], coord[1]); break;
-                        case 'x': success = game.placeMark(coord[0], coord[1]); break;
-                        case 'e': success = game.clearCell(coord[0], coord[1]); break;
-                    }
-
-                    // Auto-check for win after placing a cat
-                    if (success && cmd == 'c' && game.validate(false)) {
-                        game.display();
-                        displayWin();
-                        System.out.print("\n  Play again? (y/n): ");
-                        String answer = scanner.hasNextLine() ? scanner.nextLine().trim() : "n";
-                        if (answer.isEmpty() || Character.toLowerCase(answer.charAt(0)) != 'y') {
-                            running = false;
-                        } else {
-                            game.resetBoard();
-                        }
-                    }
-                } else {
-                    System.out.println("   [!] Invalid position. Use format like A1, B3, etc.");
-                }
-
-            } else {
-                System.out.println("   [!] Unknown command. Type 'rules' for help.");
+                    break;
+                case 'R': resetBoard(); break;
+                case 'H':
+                    displayRules();
+                    setStatus("Returned to the puzzle.", CYAN);
+                    break;
+                case 'Q': running = false; break;
+                default: setStatus("Unknown key.", RED); break;
             }
         }
-
-        scanner.close();
+    }
+    private void showCheckResults() {
+        clearScreen();
+        displayTitle();
+        displayBoardWithoutControls();
+        System.out.println("\n" + CYAN + BOLD + "  CHECK RESULTS" + RESET);
+        validate(true);
+        System.out.println();
+        System.out.print(DIM + "  Press any game-control key to continue..." + RESET);
+        System.out.flush();
+        readKey(GAME_KEYS);
+    }
+    private static char readKey(String allowedKeys) {
+        if (IS_WINDOWS) {
+            try {
+                ProcessBuilder builder = new ProcessBuilder(
+                        "cmd.exe", "/c", "choice", "/n", "/c", allowedKeys
+                );
+                builder.redirectInput(ProcessBuilder.Redirect.INHERIT);
+                builder.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+                builder.redirectError(ProcessBuilder.Redirect.DISCARD);
+                int exitCode = builder.start().waitFor();
+                if (exitCode >= 1 && exitCode <= allowedKeys.length()) {
+                    return allowedKeys.charAt(exitCode - 1);
+                }
+            } catch (IOException exception) {
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                return '\0';
+            }
+        }
+        try {
+            String line = CONSOLE_READER.readLine();
+            if (line == null || line.trim().isEmpty()) return '\0';
+            char key = Character.toUpperCase(line.trim().charAt(0));
+            return allowedKeys.indexOf(key) >= 0 ? key : '\0';
+        } catch (IOException exception) {
+            return '\0';
+        }
+    }
+    private static int selectPuzzle() {
+        while (true) {
+            clearScreen();
+            displayTitle();
+            System.out.println(CYAN + BOLD + "  SELECT A PUZZLE" + RESET + "\n");
+            for (int i = 0; i < PUZZLE_NAMES.length; i++) {
+                String difficultyColor = i == 0 ? GREEN : (i == 1 ? YELLOW : RED);
+                System.out.println("  " + WHITE + (i + 1) + ". " + RESET
+                        + difficultyColor + PUZZLE_NAMES[i] + RESET);
+            }
+            System.out.println("  " + GRAY + "Q. Quit" + RESET);
+            System.out.println();
+            System.out.print("  " + WHITE + BOLD + "Press 1, 2, 3, or Q: " + RESET);
+            System.out.flush();
+            char choice = readKey("123Q");
+            if (choice == 'Q') return -1;
+            if (choice >= '1' && choice <= '3') return choice - '1';
+        }
+    }
+    private static void configureWindowsUtf8CodePage() {
+        if (!IS_WINDOWS) {
+            return;
+        }
+        try {
+            Process process = new ProcessBuilder(
+                    "cmd.exe", "/c", "chcp 65001 > nul")
+                    .inheritIO()
+                    .start();
+            int exitCode = process.waitFor();
+            if (exitCode != 0) {
+                System.err.println("Warning: could not set Windows code page to UTF-8.");
+            }
+        } catch (IOException exception) {
+            System.err.println("Warning: could not run chcp to enable UTF-8.");
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            System.err.println("Warning: UTF-8 console setup was interrupted.");
+        }
+    }
+    public static void main(String[] args) {
+        configureWindowsUtf8CodePage();
+        try {
+            System.setOut(new PrintStream(
+                    new FileOutputStream(FileDescriptor.out), true, "UTF-8"));
+            System.setErr(new PrintStream(
+                    new FileOutputStream(FileDescriptor.err), true, "UTF-8"));
+        } catch (UnsupportedEncodingException exception) {
+            System.err.println("UTF-8 is not available on this Java installation.");
+        }
+        int puzzleIndex = selectPuzzle();
+        if (puzzleIndex == -1) {
+            System.out.println(GREEN + "Thanks for playing MeowDoku. Goodbye! =^.^=" + RESET);
+            return;
+        }
+        MeowDoku game = new MeowDoku(puzzleIndex);
+        game.play();
+        clearScreen();
+        displayTitle();
+        System.out.println(GREEN + BOLD + "  Thanks for playing MeowDoku! Goodbye! =^.^=" + RESET);
     }
 }
