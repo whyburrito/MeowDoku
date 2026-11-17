@@ -1,410 +1,364 @@
-# =============================================================================
-# MeowDoku Console Edition - Python Implementation
-# MeowdoCrew | CS208 - Programming Languages
-# =============================================================================
-# A lightweight, single-player logic puzzle game played in the terminal.
-# Place exactly one cat (C) per row, column, and region.
-# No two cats may be adjacent (including diagonally).
-# Use elimination marks (X) to help deduce the solution.
-# =============================================================================
-
+import os
 import sys
-
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
+try:
+    import msvcrt
+except ImportError:
+    msvcrt = None
+RESET = '\x1b[0m'
+BOLD = '\x1b[1m'
+DIM = '\x1b[2m'
+WHITE = '\x1b[97m'
+CYAN = '\x1b[96m'
+BLUE = '\x1b[94m'
+GREEN = '\x1b[92m'
+YELLOW = '\x1b[93m'
+RED = '\x1b[91m'
+MAGENTA = '\x1b[95m'
+GRAY = '\x1b[90m'
+SELECTED_BG = '\x1b[48;5;57m'
+BORDER_COLOR = '\x1b[38;5;39m'
+REGION_COLORS = ['\x1b[38;5;45m', '\x1b[38;5;213m', '\x1b[38;5;220m', '\x1b[38;5;114m', '\x1b[38;5;141m', '\x1b[38;5;208m', '\x1b[38;5;81m']
+CAT_ICON = '🐱'
 EMPTY = '.'
-CAT   = 'C'
-MARK  = 'X'
-REGION_LABELS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+CAT = 'C'
+MARK = 'X'
+REGION_LABELS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+GAME_KEYS = 'WASDCXEVRHQ'
+PUZZLE_NAMES = ["Kitten's First Steps (5x5 Easy)", 'Cat Nap Challenge (6x6 Medium)', 'Meow Master (7x7 Hard)']
+PUZZLE_REGIONS = [[[0, 0, 1, 1, 1], [0, 0, 0, 1, 1], [2, 2, 0, 3, 3], [2, 2, 4, 4, 3], [2, 4, 4, 4, 3]], [[0, 0, 1, 1, 2, 2], [0, 0, 1, 1, 2, 2], [3, 3, 3, 4, 4, 2], [3, 5, 5, 4, 4, 4], [3, 5, 5, 5, 4, 4], [3, 5, 5, 5, 4, 4]], [[0, 0, 0, 1, 1, 2, 2], [0, 3, 0, 1, 1, 2, 2], [3, 3, 3, 1, 4, 4, 2], [3, 3, 5, 5, 4, 4, 4], [6, 3, 5, 5, 5, 4, 4], [6, 6, 6, 5, 5, 5, 4], [6, 6, 6, 6, 5, 5, 5]]]
 
-# ---------------------------------------------------------------------------
-# Puzzle definitions
-# ---------------------------------------------------------------------------
-PUZZLES = [
-    {
-        "name": "Kitten's First Steps (5x5 Easy)",
-        "regions": [
-            [0, 0, 1, 1, 1],
-            [0, 0, 0, 1, 1],
-            [2, 2, 0, 3, 3],
-            [2, 2, 4, 4, 3],
-            [2, 4, 4, 4, 3],
-        ]
-    },
-    {
-        "name": "Cat Nap Challenge (6x6 Medium)",
-        "regions": [
-            [0, 0, 1, 1, 2, 2],
-            [0, 0, 1, 1, 2, 2],
-            [3, 3, 3, 4, 4, 2],
-            [3, 5, 5, 4, 4, 4],
-            [3, 5, 5, 5, 4, 4],
-            [3, 5, 5, 5, 4, 4],
-        ]
-    },
-    {
-        "name": "Meow Master (7x7 Hard)",
-        "regions": [
-            [0, 0, 0, 1, 1, 2, 2],
-            [0, 3, 0, 1, 1, 2, 2],
-            [3, 3, 3, 1, 4, 4, 2],
-            [3, 3, 5, 5, 4, 4, 4],
-            [6, 3, 5, 5, 5, 4, 4],
-            [6, 6, 6, 5, 5, 5, 4],
-            [6, 6, 6, 6, 5, 5, 5],
-        ]
-    },
-]
+def setup_terminal():
+    if os.name == 'nt':
+        try:
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            kernel32.SetConsoleOutputCP(65001)
+            handle = kernel32.GetStdHandle(-11)
+            mode = ctypes.c_uint()
+            if kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+                ENABLE_VIRTUAL_TERMINAL_PROCESSING = 4
+                kernel32.SetConsoleMode(handle, mode.value | ENABLE_VIRTUAL_TERMINAL_PROCESSING)
+        except Exception:
+            pass
+    if hasattr(sys.stdout, 'reconfigure'):
+        try:
+            sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        except Exception:
+            pass
 
+def clear_screen():
+    print('\x1b[2J\x1b[H', end='', flush=True)
 
-# ---------------------------------------------------------------------------
-# MeowdokuBoard class
-# ---------------------------------------------------------------------------
-class MeowdokuBoard:
-    """Represents the game board for a MeowDoku puzzle."""
-
-    def __init__(self, region_map):
-        """Initialize the board from a region map (2D list of ints)."""
-        self.size = len(region_map)
-        self.region_map = region_map
-        self.board = [[EMPTY] * self.size for _ in range(self.size)]
-        self.num_regions = max(
-            region_map[r][c]
-            for r in range(self.size)
-            for c in range(self.size)
-        ) + 1
-
-    def display(self):
-        """Print the board to the console."""
-        print()
-
-        # Column headers
-        header = "     "
-        for c in range(self.size):
-            header += f" {c + 1}  "
-        print(header)
-
-        # Top border
-        border = "   +" + "---+" * self.size
-        print(border)
-
-        for r in range(self.size):
-            row_label = chr(ord('A') + r)
-            row_str = f" {row_label} |"
-            for c in range(self.size):
-                cell = self.board[r][c]
-                if cell == CAT:
-                    row_str += " C |"
-                elif cell == MARK:
-                    row_str += " X |"
-                else:
-                    region_label = REGION_LABELS[self.region_map[r][c]]
-                    row_str += f" {region_label} |"
-            print(row_str)
-            print(border)
-
-        # Region legend
-        labels = ", ".join(REGION_LABELS[i] for i in range(self.num_regions))
-        print(f"\n   Regions: {labels}")
-
-    def place_cat(self, row, col):
-        """Place or remove a cat at the given position. Returns True on success."""
-        if not self._in_bounds(row, col):
-            print("   [!] Position out of bounds.")
-            return False
-        if self.board[row][col] == CAT:
-            print("   [!] A cat is already here! Removing it.")
-            self.board[row][col] = EMPTY
-            return True
-        self.board[row][col] = CAT
-        return True
-
-    def place_mark(self, row, col):
-        """Place or remove an elimination mark. Returns True on success."""
-        if not self._in_bounds(row, col):
-            print("   [!] Position out of bounds.")
-            return False
-        if self.board[row][col] == CAT:
-            print("   [!] Remove the cat first before marking.")
-            return False
-        if self.board[row][col] == MARK:
-            print("   [!] Mark removed.")
-            self.board[row][col] = EMPTY
-            return True
-        self.board[row][col] = MARK
-        return True
-
-    def clear_cell(self, row, col):
-        """Clear a cell. Returns True on success."""
-        if not self._in_bounds(row, col):
-            print("   [!] Position out of bounds.")
-            return False
-        self.board[row][col] = EMPTY
-        return True
-
-    def reset_board(self):
-        """Reset the entire board to empty."""
-        self.board = [[EMPTY] * self.size for _ in range(self.size)]
-        print("   Board has been reset.")
-
-    def validate(self, verbose=False):
-        """
-        Validate the current board state.
-        Returns True if the puzzle is fully and correctly solved.
-        """
-        valid = True
-        total_cats = 0
-
-        # Check rows
-        for r in range(self.size):
-            count = sum(1 for c in range(self.size) if self.board[r][c] == CAT)
-            total_cats += count
-            if count > 1:
-                if verbose:
-                    print(f"   [!] Row {chr(ord('A') + r)} has more than one cat!")
-                valid = False
-
-        # Check columns
-        for c in range(self.size):
-            count = sum(1 for r in range(self.size) if self.board[r][c] == CAT)
-            if count > 1:
-                if verbose:
-                    print(f"   [!] Column {c + 1} has more than one cat!")
-                valid = False
-
-        # Check regions
-        region_count = [0] * self.num_regions
-        for r in range(self.size):
-            for c in range(self.size):
-                if self.board[r][c] == CAT:
-                    region_count[self.region_map[r][c]] += 1
-        for i in range(self.num_regions):
-            if region_count[i] > 1:
-                if verbose:
-                    print(f"   [!] Region {REGION_LABELS[i]} has more than one cat!")
-                valid = False
-
-        # Check adjacency (including diagonals)
-        directions = [(-1, -1), (-1, 0), (-1, 1),
-                      ( 0, -1),          ( 0, 1),
-                      ( 1, -1), ( 1, 0), ( 1, 1)]
-        for r in range(self.size):
-            for c in range(self.size):
-                if self.board[r][c] == CAT:
-                    for dr, dc in directions:
-                        nr, nc = r + dr, c + dc
-                        if self._in_bounds(nr, nc) and self.board[nr][nc] == CAT:
-                            if verbose:
-                                print(f"   [!] Cats at {chr(ord('A') + r)}{c + 1}"
-                                      f" and {chr(ord('A') + nr)}{nc + 1} are adjacent!")
-                            valid = False
-
-        # Win condition
-        if valid and total_cats == self.size:
-            return True
-
-        if valid and total_cats < self.size and verbose:
-            remaining = self.size - total_cats
-            print(f"   [i] No rule violations so far. Place {remaining} more cat(s) to win!")
-
-        return False
-
-    def _in_bounds(self, row, col):
-        """Check if a position is within the grid."""
-        return 0 <= row < self.size and 0 <= col < self.size
-
-
-# ---------------------------------------------------------------------------
-# Utility functions
-# ---------------------------------------------------------------------------
-def parse_coord(text, size):
-    """
-    Parse a coordinate string like 'A1' into (row, col).
-    Returns (row, col) tuple or None on failure.
-    """
-    text = text.strip().upper()
-    if len(text) < 2:
-        return None
-
-    row_char = text[0]
-    if not row_char.isalpha():
-        return None
-    row = ord(row_char) - ord('A')
-    if row < 0 or row >= size:
-        return None
-
-    col_str = text[1:]
-    if not col_str.isdigit():
-        return None
-    col = int(col_str) - 1
-    if col < 0 or col >= size:
-        return None
-
-    return (row, col)
-
+def read_key(allowed_keys):
+    allowed = allowed_keys.upper()
+    while True:
+        if msvcrt is not None:
+            key = msvcrt.getwch()
+            if key in ('\x00', 'à'):
+                msvcrt.getwch()
+                continue
+        elif sys.stdin.isatty():
+            import termios
+            import tty
+            fd = sys.stdin.fileno()
+            old_settings = termios.tcgetattr(fd)
+            try:
+                tty.setraw(fd)
+                key = sys.stdin.read(1)
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        else:
+            key = input('\nEnter a key: ')[:1]
+        if key and key.upper() in allowed:
+            return key.upper()
 
 def display_title():
-    """Print the game title screen."""
-    print()
-    print("  +====================================================+")
-    print("  |                                                    |")
-    print("  |      /\\_/\\    M E O W D O K U                      |")
-    print("  |     ( o.o )   Console Edition                      |")
-    print("  |      > ^ <                                         |")
-    print("  |     /|   |\\   A Cat Placement Puzzle               |")
-    print("  |                                                    |")
-    print("  |   MeowdoCrew | CS208 - Programming Languages      |")
-    print("  |                                                    |")
-    print("  +====================================================+")
+    print(CYAN + BOLD + '  +------------------------------------------------------+' + RESET)
+    print(CYAN + BOLD + '  |' + RESET + '                                                      ' + CYAN + BOLD + '|' + RESET)
+    print(CYAN + BOLD + '  |' + RESET + GREEN + '       /\\_/\\       M E O W D O K U                 ' + CYAN + BOLD + '|' + RESET)
+    print(CYAN + BOLD + '  |' + RESET + GREEN + '      ( o.o )      ' + MAGENTA + BOLD + 'COLOR TERMINAL EDITION' + RESET + '   ' + CYAN + BOLD + '|' + RESET)
+    print(CYAN + BOLD + '  |' + RESET + GREEN + '       > ^ <       ' + WHITE + 'A Cat Placement Puzzle' + RESET + '      ' + CYAN + BOLD + '|' + RESET)
+    print(CYAN + BOLD + '  |' + RESET + '                                                      ' + CYAN + BOLD + '|' + RESET)
+    print(CYAN + BOLD + '  +------------------------------------------------------+' + RESET)
     print()
 
+class MeowDoku:
 
-def display_rules():
-    """Print the game rules and command reference."""
-    print()
-    print("  ===== HOW TO PLAY =====")
-    print()
-    print("  Goal: Place exactly ONE cat (C) in each row, column,")
-    print("        and region of the grid.")
-    print()
-    print("  Rules:")
-    print("    1. Each ROW must contain exactly one cat.")
-    print("    2. Each COLUMN must contain exactly one cat.")
-    print("    3. Each REGION (marked by letters A, B, C...) must")
-    print("       contain exactly one cat.")
-    print("    4. No two cats can be ADJACENT to each other")
-    print("       (horizontally, vertically, or diagonally).")
-    print()
-    print("  Commands:")
-    print("    c <pos>   - Place/remove a cat (e.g., c A1)")
-    print("    x <pos>   - Place/remove an elimination mark (e.g., x B3)")
-    print("    e <pos>   - Clear a cell (e.g., e C2)")
-    print("    check     - Validate your current board")
-    print("    reset     - Clear the entire board")
-    print("    rules     - Show these rules again")
-    print("    quit      - Exit the game")
-    print()
+    def __init__(self, puzzle_index):
+        self.region_map = PUZZLE_REGIONS[puzzle_index]
+        self.size = len(self.region_map)
+        self.board = [[EMPTY for _ in range(self.size)] for _ in range(self.size)]
+        self.num_regions = max((max(row) for row in self.region_map)) + 1
+        self.cursor_row = 0
+        self.cursor_col = 0
+        self.running = True
+        self.status_message = 'Welcome! Use W/A/S/D to move, then C to place a cat.'
+        self.status_color = CYAN
 
+    def coordinate(self, row, col):
+        return f"{chr(ord('A') + row)}{col + 1}"
 
-def display_win():
-    """Print the victory message."""
-    print()
-    print("  +============================================+")
-    print("  |                                            |")
-    print("  |    /\\_/\\   CONGRATULATIONS!                |")
-    print("  |   ( ^.^ )  You solved the puzzle!         |")
-    print("  |    > ^ <   All cats are happy! =^.^=      |")
-    print("  |                                            |")
-    print("  +============================================+")
+    def cell_display(self, row, col):
+        value = self.board[row][col]
+        if value == CAT:
+            return CAT_ICON
+        if value == MARK:
+            return MARK
+        return REGION_LABELS[self.region_map[row][col]]
 
+    @staticmethod
+    def format_cell(symbol):
+        if symbol == CAT_ICON:
+            return f' {symbol} '
+        return f'  {symbol} '
 
-# ---------------------------------------------------------------------------
-# Main game loop
-# ---------------------------------------------------------------------------
-def main():
-    """Entry point for MeowDoku Console Edition."""
-    display_title()
+    def symbol_color(self, row, col):
+        value = self.board[row][col]
+        if value == CAT:
+            return GREEN
+        if value == MARK:
+            return YELLOW
+        return REGION_COLORS[self.region_map[row][col] % len(REGION_COLORS)]
 
-    # Puzzle selection
-    print("  Select a puzzle:\n")
-    for i, puzzle in enumerate(PUZZLES):
-        print(f"    {i + 1}. {puzzle['name']}")
-    print()
+    def print_border(self):
+        print('     ' + BORDER_COLOR + '+' + RESET, end='')
+        for _ in range(self.size):
+            print(BORDER_COLOR + '----+' + RESET, end='')
+        print()
 
-    try:
-        choice = int(input(f"  Enter choice (1-{len(PUZZLES)}): ").strip())
-    except (ValueError, EOFError):
-        choice = 0
-
-    if choice < 1 or choice > len(PUZZLES):
-        print("  Invalid choice. Defaulting to puzzle 1.")
-        choice = 1
-
-    selected = PUZZLES[choice - 1]
-    board = MeowdokuBoard(selected["regions"])
-
-    print(f"\n  Loading: {selected['name']}")
-    display_rules()
-
-    # Game loop
-    running = True
-    while running:
-        board.display()
-
-        try:
-            line = input("\n  >> ").strip()
-        except (EOFError, KeyboardInterrupt):
-            print("\n\n  Thanks for playing MeowDoku! Goodbye! =^.^=\n")
-            break
-
-        if not line:
-            continue
-
-        cmd_lower = line.lower()
-
-        # Quit
-        if cmd_lower in ("quit", "exit", "q"):
-            print("\n  Thanks for playing MeowDoku! Goodbye! =^.^=\n")
-            running = False
-
-        # Help / Rules
-        elif cmd_lower in ("rules", "help", "h"):
-            display_rules()
-
-        # Reset
-        elif cmd_lower == "reset":
-            board.reset_board()
-
-        # Validate / Check
-        elif cmd_lower in ("check", "validate"):
-            print()
-            if board.validate(verbose=True):
-                display_win()
-                try:
-                    answer = input("\n  Play again? (y/n): ").strip().lower()
-                except (EOFError, KeyboardInterrupt):
-                    answer = "n"
-                if not answer or answer[0] != 'y':
-                    running = False
+    def display_board(self, controls=True):
+        heading = 'MEOWDOKU' if controls else 'SOLVED PUZZLE'
+        print(CYAN + BOLD + f'  {heading}' + RESET + WHITE + f'  |  {self.size}x{self.size} PUZZLE' + RESET)
+        if controls:
+            print(DIM + '  Move the purple selection with W/A/S/D, then choose an action.' + RESET)
+        print()
+        print('       ', end='')
+        for col in range(self.size):
+            print(BLUE + BOLD + f' {col + 1:^3}' + RESET, end='')
+        print()
+        self.print_border()
+        for row in range(self.size):
+            print('  ' + MAGENTA + BOLD + chr(ord('A') + row) + RESET + '  ' + BORDER_COLOR + '|' + RESET, end='')
+            for col in range(self.size):
+                symbol = self.cell_display(row, col)
+                if row == self.cursor_row and col == self.cursor_col and controls:
+                    print(SELECTED_BG + WHITE + BOLD + self.format_cell(symbol) + RESET, end='')
                 else:
-                    board.reset_board()
+                    print(self.symbol_color(row, col) + BOLD + self.format_cell(symbol) + RESET, end='')
+                print(BORDER_COLOR + '|' + RESET, end='')
+            print()
+            self.print_border()
+        print('\n  ' + WHITE + BOLD + 'REGIONS  ' + RESET, end='')
+        for region in range(self.num_regions):
+            if region:
+                print(GRAY + '  ' + RESET, end='')
+            print(REGION_COLORS[region % len(REGION_COLORS)] + BOLD + REGION_LABELS[region] + RESET, end='')
+        print()
+        if controls:
+            print('\n' + CYAN + BOLD + '  CONTROLS' + RESET)
+            print('  ' + YELLOW + 'W / A / S / D' + RESET + '  Move selection (up / left / down / right)')
+            print('  ' + GREEN + 'C' + RESET + '              Place or remove a ' + GREEN + CAT_ICON + RESET + ' cat')
+            print('  ' + YELLOW + 'X' + RESET + '              Place or remove an elimination mark')
+            print('  ' + RED + 'E' + RESET + '              Clear the selected cell')
+            print('  ' + CYAN + 'V' + RESET + '              Check the puzzle')
+            print('  ' + MAGENTA + 'R' + RESET + '              Reset the board')
+            print('  ' + BLUE + 'H' + RESET + '              Show the rules')
+            print('  ' + GRAY + 'Q' + RESET + '              Quit the game')
+            print('\n  ' + WHITE + BOLD + 'STATUS  ' + RESET + self.status_color + self.status_message + RESET)
+            print('\n  ' + DIM + 'Press a key: ' + RESET, end='', flush=True)
 
-        # Placement commands: c, x, e
-        elif len(cmd_lower) >= 3 and cmd_lower[0] in ('c', 'x', 'e') and cmd_lower[1] == ' ':
-            cmd_char = cmd_lower[0]
-            coord_str = line[2:].strip()
-            coord = parse_coord(coord_str, board.size)
+    def set_status(self, message, color):
+        self.status_message = message
+        self.status_color = color
 
-            if coord is not None:
-                row, col = coord
-                success = False
-
-                if cmd_char == 'c':
-                    success = board.place_cat(row, col)
-                elif cmd_char == 'x':
-                    success = board.place_mark(row, col)
-                elif cmd_char == 'e':
-                    success = board.clear_cell(row, col)
-
-                # Auto-check for win after placing a cat
-                if success and cmd_char == 'c' and board.validate(verbose=False):
-                    board.display()
-                    display_win()
-                    try:
-                        answer = input("\n  Play again? (y/n): ").strip().lower()
-                    except (EOFError, KeyboardInterrupt):
-                        answer = "n"
-                    if not answer or answer[0] != 'y':
-                        running = False
-                    else:
-                        board.reset_board()
-            else:
-                print("   [!] Invalid position. Use format like A1, B3, etc.")
-
+    def move_cursor(self, row_change, col_change):
+        old = (self.cursor_row, self.cursor_col)
+        self.cursor_row = max(0, min(self.size - 1, self.cursor_row + row_change))
+        self.cursor_col = max(0, min(self.size - 1, self.cursor_col + col_change))
+        if old == (self.cursor_row, self.cursor_col):
+            self.set_status('You are at the edge of the board.', YELLOW)
         else:
-            print("   [!] Unknown command. Type 'rules' for help.")
+            self.set_status('Selected cell: ' + self.coordinate(self.cursor_row, self.cursor_col), CYAN)
 
+    def place_cat(self, row, col):
+        if self.board[row][col] == CAT:
+            self.board[row][col] = EMPTY
+            self.set_status('Cat removed from ' + self.coordinate(row, col) + '.', YELLOW)
+        else:
+            self.board[row][col] = CAT
+            self.set_status('Cat placed at ' + self.coordinate(row, col) + '.', GREEN)
 
-if __name__ == "__main__":
-    main()
+    def place_mark(self, row, col):
+        if self.board[row][col] == CAT:
+            self.set_status('Remove the cat before placing a mark.', RED)
+        elif self.board[row][col] == MARK:
+            self.board[row][col] = EMPTY
+            self.set_status('Mark removed from ' + self.coordinate(row, col) + '.', YELLOW)
+        else:
+            self.board[row][col] = MARK
+            self.set_status('Elimination mark placed at ' + self.coordinate(row, col) + '.', YELLOW)
+
+    def clear_cell(self, row, col):
+        self.board[row][col] = EMPTY
+        self.set_status('Cell ' + self.coordinate(row, col) + ' cleared.', CYAN)
+
+    def reset_board(self):
+        self.board = [[EMPTY for _ in range(self.size)] for _ in range(self.size)]
+        self.cursor_row = 0
+        self.cursor_col = 0
+        self.set_status('Board has been reset.', GREEN)
+
+    def validate(self, verbose=False):
+        valid = True
+        total_cats = 0
+        messages = []
+        for row in range(self.size):
+            count = sum((1 for value in self.board[row] if value == CAT))
+            total_cats += count
+            if count > 1:
+                valid = False
+                messages.append(f"[!] Row {chr(ord('A') + row)} has more than one cat.")
+        for col in range(self.size):
+            count = sum((1 for row in range(self.size) if self.board[row][col] == CAT))
+            if count > 1:
+                valid = False
+                messages.append(f'[!] Column {col + 1} has more than one cat.')
+        region_count = [0] * self.num_regions
+        for row in range(self.size):
+            for col in range(self.size):
+                if self.board[row][col] == CAT:
+                    region_count[self.region_map[row][col]] += 1
+        for region, count in enumerate(region_count):
+            if count > 1:
+                valid = False
+                messages.append(f'[!] Region {REGION_LABELS[region]} has more than one cat.')
+        directions = ((0, 1), (1, -1), (1, 0), (1, 1))
+        for row in range(self.size):
+            for col in range(self.size):
+                if self.board[row][col] != CAT:
+                    continue
+                for dr, dc in directions:
+                    nr, nc = (row + dr, col + dc)
+                    if 0 <= nr < self.size and 0 <= nc < self.size and (self.board[nr][nc] == CAT):
+                        valid = False
+                        messages.append(f'[!] Cats at {self.coordinate(row, col)} and {self.coordinate(nr, nc)} are adjacent.')
+        solved = valid and total_cats == self.size
+        if valid and (not solved):
+            messages.append(f'[i] No rule violations. Place {self.size - total_cats} more cat(s) to win.')
+        elif not valid:
+            messages.append('[i] Fix the rule violations and check again.')
+        if verbose:
+            return (solved, messages)
+        return (solved, messages)
+
+    def display_rules(self):
+        clear_screen()
+        display_title()
+        print(CYAN + BOLD + '  HOW TO PLAY' + RESET)
+        print('  1. Place exactly ' + GREEN + 'ONE ' + CAT_ICON + ' cat' + RESET + ' in each row.')
+        print('  2. Place exactly ' + GREEN + 'ONE ' + CAT_ICON + ' cat' + RESET + ' in each column.')
+        print('  3. Place exactly ' + GREEN + 'ONE ' + CAT_ICON + ' cat' + RESET + ' in each region.')
+        print('  4. No two cats may touch, including diagonally.')
+        print('\n  Empty cells show their region letter.')
+        print('  The selected cell has a purple background.')
+        print('\n' + DIM + '  Press any game-control key to return to the puzzle.' + RESET, end='', flush=True)
+        read_key(GAME_KEYS)
+
+    def show_check_results(self):
+        clear_screen()
+        display_title()
+        self.display_board(controls=False)
+        print('\n' + CYAN + BOLD + '  CHECK RESULTS' + RESET)
+        solved, messages = self.validate(verbose=True)
+        for message in messages:
+            color = RED if message.startswith('[!] ') else GREEN if message.startswith('[i] No') else YELLOW
+            print('  ' + color + message + RESET)
+        print('\n' + DIM + '  Press any game-control key to continue...' + RESET, end='', flush=True)
+        read_key(GAME_KEYS)
+
+    def handle_win(self):
+        clear_screen()
+        display_title()
+        self.display_board(controls=False)
+        print('\n' + GREEN + BOLD + '  +----------------------------------------------+')
+        print('  |             CONGRATULATIONS!                 |')
+        print('  |          You solved the puzzle!              |')
+        print('  |           All cats are happy!                |')
+        print('  +----------------------------------------------+' + RESET)
+        print('\n' + WHITE + BOLD + '  Play this puzzle again? (Y/N): ' + RESET, end='', flush=True)
+        answer = read_key('YN')
+        if answer == 'Y':
+            self.reset_board()
+        else:
+            self.running = False
+
+    def play(self):
+        self.running = True
+        while self.running:
+            clear_screen()
+            display_title()
+            self.display_board(controls=True)
+            key = read_key(GAME_KEYS)
+            if key == 'W':
+                self.move_cursor(-1, 0)
+            elif key == 'A':
+                self.move_cursor(0, -1)
+            elif key == 'S':
+                self.move_cursor(1, 0)
+            elif key == 'D':
+                self.move_cursor(0, 1)
+            elif key == 'C':
+                self.place_cat(self.cursor_row, self.cursor_col)
+                solved, _ = self.validate()
+                if solved:
+                    self.handle_win()
+            elif key == 'X':
+                self.place_mark(self.cursor_row, self.cursor_col)
+            elif key == 'E':
+                self.clear_cell(self.cursor_row, self.cursor_col)
+            elif key == 'V':
+                solved, _ = self.validate()
+                if solved:
+                    self.handle_win()
+                else:
+                    self.show_check_results()
+            elif key == 'R':
+                self.reset_board()
+            elif key == 'H':
+                self.display_rules()
+                self.set_status('Returned to the puzzle.', CYAN)
+            elif key == 'Q':
+                self.running = False
+
+def select_puzzle():
+    while True:
+        clear_screen()
+        display_title()
+        print(CYAN + BOLD + '  SELECT A PUZZLE\n' + RESET)
+        for index, name in enumerate(PUZZLE_NAMES):
+            color = GREEN if index == 0 else YELLOW if index == 1 else RED
+            print(f'  {WHITE}{index + 1}.{RESET} {color}{name}{RESET}')
+        print('  ' + GRAY + 'Q. Quit' + RESET)
+        print('\n  ' + WHITE + BOLD + 'Press 1, 2, 3, or Q: ' + RESET, end='', flush=True)
+        choice = read_key('123Q')
+        if choice == 'Q':
+            return -1
+        return int(choice) - 1
+
+def main():
+    setup_terminal()
+    puzzle_index = select_puzzle()
+    if puzzle_index == -1:
+        print(GREEN + 'Thanks for playing MeowDoku. Goodbye! =^.^=' + RESET)
+        return
+    game = MeowDoku(puzzle_index)
+    game.play()
+    clear_screen()
+    display_title()
+    print(GREEN + BOLD + '  Thanks for playing MeowDoku! Goodbye! =^.^=' + RESET)
+if __name__ == '__main__':
+    try:
+        main()
+    except KeyboardInterrupt:
+        clear_screen()
+        print('\n' + GREEN + 'Thanks for playing MeowDoku! Goodbye!' + RESET)
