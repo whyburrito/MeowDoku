@@ -33,7 +33,7 @@ public class MeowDoku {
     private static final char MARK = 'X';
     private static final String CAT_EMOJI = "\uD83D\uDC31";
     private static final String REGION_LABELS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    private static final String GAME_KEYS = "WASDCXEVRHQ";
+    private static final String GAME_KEYS = "WASDCXETVRMHQ";
     private static final BufferedReader CONSOLE_READER =
             new BufferedReader(new InputStreamReader(System.in));
     private static final boolean IS_WINDOWS =
@@ -76,8 +76,27 @@ public class MeowDoku {
     private int cursorRow = 0;
     private int cursorCol = 0;
     private boolean running = true;
+    private boolean returnToMenu = false;
+    private int moveCount = 0;
+    private boolean autoMark = false;
+    private long startTimeMillis = System.currentTimeMillis();
     private String statusMessage = "Welcome! Use W/A/S/D to move, then C to place a cat.";
     private String statusColor = CYAN;
+    private int catCount() {
+        int count = 0;
+        for (int row = 0; row < size; row++) {
+            for (int col = 0; col < size; col++) {
+                if (board[row][col] == CAT) count++;
+            }
+        }
+        return count;
+    }
+    private int elapsedSeconds() {
+        return Math.max(0, (int) ((System.currentTimeMillis() - startTimeMillis) / 1000L));
+    }
+    private static String formatTime(int seconds) {
+        return String.format("%02d:%02d", seconds / 60, seconds % 60);
+    }
     private MeowDoku(int puzzleIndex) {
         if (puzzleIndex < 0 || puzzleIndex >= PUZZLE_REGIONS.length) {
             throw new IllegalArgumentException("Invalid puzzle index.");
@@ -109,9 +128,9 @@ public class MeowDoku {
     }
     private String formatCell(String symbol) {
         if (CAT_EMOJI.equals(symbol)) {
-            return " " + symbol + "  ";
+            return " " + symbol + " ";
         }
-        return "  " + symbol + "  ";
+        return "  " + symbol + " ";
     }
     private static void clearScreen() {
         System.out.print("\u001B[2J\u001B[H");
@@ -120,18 +139,23 @@ public class MeowDoku {
     private static void displayTitle() {
         System.out.println(CYAN + BOLD + "  +------------------------------------------------------+" + RESET);
         System.out.println(CYAN + BOLD + "  |" + RESET + "                                                      " + CYAN + BOLD + "|" + RESET);
-        System.out.println(CYAN + BOLD + "  |" + RESET + GREEN + "       /\\_/\\       M E O W D O K U                 " + CYAN + BOLD + "|" + RESET);
-        System.out.println(CYAN + BOLD + "  |" + RESET + GREEN + "      ( o.o )      " + MAGENTA + BOLD + "COLOR TERMINAL EDITION" + RESET + "   " + CYAN + BOLD + "|" + RESET);
-        System.out.println(CYAN + BOLD + "  |" + RESET + GREEN + "       > ^ <       " + WHITE + "A Cat Placement Puzzle" + RESET + "      " + CYAN + BOLD + "|" + RESET);
+        System.out.println(CYAN + BOLD + "  |" + RESET + GREEN + "       /\\_/\\       M E O W D O K U                    " + CYAN + BOLD + "|" + RESET);
+        System.out.println(CYAN + BOLD + "  |" + RESET + GREEN + "      ( o.o )      " + MAGENTA + BOLD + "COLOR TERMINAL EDITION" + RESET + "             " + CYAN + BOLD + "|" + RESET);
+        System.out.println(CYAN + BOLD + "  |" + RESET + GREEN + "       > ^ <       " + WHITE + "A Cat Placement Puzzle" + RESET + "             " + CYAN + BOLD + "|" + RESET);
         System.out.println(CYAN + BOLD + "  |" + RESET + "                                                      " + CYAN + BOLD + "|" + RESET);
         System.out.println(CYAN + BOLD + "  +------------------------------------------------------+" + RESET);
         System.out.println();
     }
     private void displayBoard() {
-        System.out.println(CYAN + BOLD + "  MEOWDOKU" + RESET + WHITE + "  |  " + size + "x" + size + " PUZZLE" + RESET);
-        System.out.println(DIM + "  Move the purple selection with W/A/S/D, then choose an action." + RESET);
+        displayBoard(true, "MEOWDOKU");
+    }
+    private void displayBoard(boolean controls, String heading) {
+        System.out.println(CYAN + BOLD + "  " + heading + RESET + WHITE + "  |  " + size + "x" + size + " PUZZLE" + RESET);
+        if (controls) {
+            System.out.println(DIM + "  Move the purple selection with W/A/S/D, then choose an action." + RESET);
+        }
         System.out.println();
-        System.out.print("       ");
+        System.out.print("      ");
         for (int col = 0; col < size; col++) {
             System.out.printf(BLUE + BOLD + " %2d  " + RESET, col + 1);
         }
@@ -142,7 +166,7 @@ public class MeowDoku {
             for (int col = 0; col < size; col++) {
                 String symbol = getCellDisplay(row, col);
                 String symbolColor = getSymbolColor(row, col);
-                if (row == cursorRow && col == cursorCol) {
+                if (controls && row == cursorRow && col == cursorCol) {
                     System.out.print(SELECTED_BG + WHITE + BOLD + formatCell(symbol) + RESET);
                 } else {
                     System.out.print(symbolColor + BOLD + formatCell(symbol) + RESET);
@@ -159,24 +183,35 @@ public class MeowDoku {
                     + REGION_LABELS.charAt(i) + RESET);
         }
         System.out.println();
-        System.out.println("\n" + CYAN + BOLD + "  CONTROLS" + RESET);
-        System.out.println("  " + YELLOW + "W / A / S / D" + RESET + "  Move selection (up / left / down / right)");
-        System.out.println("  " + GREEN + "C" + RESET + "              Place or remove a " + CAT_EMOJI + " cat");
-        System.out.println("  " + YELLOW + "X" + RESET + "              Place or remove an elimination mark");
-        System.out.println("  " + RED + "E" + RESET + "              Clear the selected cell");
-        System.out.println("  " + CYAN + "V" + RESET + "              Check the puzzle");
-        System.out.println("  " + MAGENTA + "R" + RESET + "              Reset the board");
-        System.out.println("  " + BLUE + "H" + RESET + "              Show the rules");
-        System.out.println("  " + GRAY + "Q" + RESET + "              Quit the game");
-        System.out.println();
-        System.out.println("  " + WHITE + BOLD + "STATUS  " + RESET + statusColor + statusMessage + RESET);
-        System.out.print("\n  " + DIM + "Press a key: " + RESET);
-        System.out.flush();
+        int cats = catCount();
+        String catsColor = cats == size ? GREEN : CYAN;
+        String autoLabel = autoMark ? (GREEN + BOLD + "ON") : (GRAY + BOLD + "OFF");
+        System.out.println("  " + WHITE + BOLD + "CATS     " + RESET
+                + catsColor + BOLD + cats + " / " + size + RESET
+                + GRAY + "   |   " + RESET + WHITE + BOLD + "MOVES  " + RESET + YELLOW + BOLD + moveCount + RESET
+                + GRAY + "   |   " + RESET + WHITE + BOLD + "AUTO-MARK  " + RESET + autoLabel + RESET);
+        if (controls) {
+            System.out.println("\n" + CYAN + BOLD + "  CONTROLS" + RESET);
+            System.out.println("  " + YELLOW + "W / A / S / D" + RESET + "  Move selection (up / left / down / right)");
+            System.out.println("  " + GREEN + "C" + RESET + "              Place or remove a " + GREEN + CAT_EMOJI + RESET + " cat");
+            System.out.println("  " + YELLOW + "X" + RESET + "              Place or remove an elimination mark");
+            System.out.println("  " + RED + "E" + RESET + "              Clear the selected cell");
+            System.out.println("  " + MAGENTA + "T" + RESET + "              Toggle auto-mark assist (ON / OFF)");
+            System.out.println("  " + CYAN + "V" + RESET + "              Check the puzzle");
+            System.out.println("  " + MAGENTA + "R" + RESET + "              Reset the board");
+            System.out.println("  " + YELLOW + "M" + RESET + "              Return to puzzle menu");
+            System.out.println("  " + BLUE + "H" + RESET + "              Show the rules");
+            System.out.println("  " + GRAY + "Q" + RESET + "              Quit the game");
+            System.out.println();
+            System.out.println("  " + WHITE + BOLD + "STATUS  " + RESET + statusColor + statusMessage + RESET);
+            System.out.print("\n  " + DIM + "Press a key: " + RESET);
+            System.out.flush();
+        }
     }
     private void printBorder() {
         System.out.print("     " + BORDER_COLOR + "+" + RESET);
         for (int col = 0; col < size; col++) {
-            System.out.print(BORDER_COLOR + "-----+" + RESET);
+            System.out.print(BORDER_COLOR + "----+" + RESET);
         }
         System.out.println();
     }
@@ -200,13 +235,41 @@ public class MeowDoku {
             setStatus("Selected cell: " + coordinate(cursorRow, cursorCol), CYAN);
         }
     }
+    private void toggleAutoMark() {
+        autoMark = !autoMark;
+        if (autoMark) {
+            setStatus("Auto-mark assist enabled (places X around new cats).", GREEN);
+        } else {
+            setStatus("Auto-mark assist disabled.", YELLOW);
+        }
+    }
     private void placeCat(int row, int col) {
+        moveCount++;
         if (board[row][col] == CAT) {
             board[row][col] = EMPTY;
             setStatus("Cat removed from " + coordinate(row, col) + ".", YELLOW);
         } else {
             board[row][col] = CAT;
-            setStatus("Cat placed at " + coordinate(row, col) + ".", GREEN);
+            int autoMarked = 0;
+            if (autoMark) {
+                int targetRegion = regionMap[row][col];
+                for (int r = 0; r < size; r++) {
+                    for (int c = 0; c < size; c++) {
+                        if (board[r][c] == EMPTY && (
+                                r == row || c == col || regionMap[r][c] == targetRegion
+                                || (Math.abs(r - row) <= 1 && Math.abs(c - col) <= 1))) {
+                            board[r][c] = MARK;
+                            autoMarked++;
+                        }
+                    }
+                }
+            }
+            if (autoMark && autoMarked > 0) {
+                setStatus("Cat placed at " + coordinate(row, col)
+                        + " (auto-marked " + autoMarked + " cell(s)).", GREEN);
+            } else {
+                setStatus("Cat placed at " + coordinate(row, col) + ".", GREEN);
+            }
         }
     }
     private void placeMark(int row, int col) {
@@ -214,6 +277,7 @@ public class MeowDoku {
             setStatus("Remove the cat before placing a mark.", RED);
             return;
         }
+        moveCount++;
         if (board[row][col] == MARK) {
             board[row][col] = EMPTY;
             setStatus("Mark removed from " + coordinate(row, col) + ".", YELLOW);
@@ -223,6 +287,9 @@ public class MeowDoku {
         }
     }
     private void clearCell(int row, int col) {
+        if (board[row][col] != EMPTY) {
+            moveCount++;
+        }
         board[row][col] = EMPTY;
         setStatus("Cell " + coordinate(row, col) + " cleared.", CYAN);
     }
@@ -234,6 +301,8 @@ public class MeowDoku {
         }
         cursorRow = 0;
         cursorCol = 0;
+        moveCount = 0;
+        startTimeMillis = System.currentTimeMillis();
         setStatus("Board has been reset.", GREEN);
     }
     private String coordinate(int row, int col) {
@@ -319,50 +388,41 @@ public class MeowDoku {
         System.out.println("  Empty cells show their region letter.");
         System.out.println("  The selected cell has a purple background.");
         System.out.println();
-        System.out.println(DIM + "  Press any game-control key to return to the puzzle." + RESET);
+        System.out.print(DIM + "  Press any game-control key to return to the puzzle." + RESET);
+        System.out.flush();
         readKey(GAME_KEYS);
     }
     private void handleWin() {
         clearScreen();
         displayTitle();
-        displayBoardWithoutControls();
+        displayBoard(false, "SOLVED PUZZLE");
+        String stats = "Moves: " + moveCount + "  |  Time: " + formatTime(elapsedSeconds());
+        int leftPad = Math.max(0, (46 - stats.length()) / 2);
+        int rightPad = Math.max(0, 46 - stats.length() - leftPad);
         System.out.println();
         System.out.println(GREEN + BOLD + "  +----------------------------------------------+");
         System.out.println("  |             CONGRATULATIONS!                 |");
         System.out.println("  |          You solved the puzzle!              |");
         System.out.println("  |           All cats are happy!                |");
+        System.out.println("  |" + " ".repeat(leftPad) + stats + " ".repeat(rightPad) + "|");
         System.out.println("  +----------------------------------------------+" + RESET);
         System.out.println();
-        System.out.print(WHITE + BOLD + "  Play this puzzle again? (Y/N): " + RESET);
+        System.out.print(WHITE + BOLD + "  Play again? (Y = Replay / M = Menu / N = Quit): " + RESET);
         System.out.flush();
-        char answer = readKey("YN");
+        char answer = readKey("YNM");
         if (answer == 'Y') {
             resetBoard();
+        } else if (answer == 'M') {
+            returnToMenu = true;
+            running = false;
         } else {
+            returnToMenu = false;
             running = false;
         }
     }
-    private void displayBoardWithoutControls() {
-        System.out.println(CYAN + BOLD + "  SOLVED PUZZLE" + RESET);
-        System.out.print("       ");
-        for (int col = 0; col < size; col++) {
-            System.out.printf(BLUE + BOLD + " %2d  " + RESET, col + 1);
-        }
-        System.out.println();
-        printBorder();
-        for (int row = 0; row < size; row++) {
-            System.out.print("  " + MAGENTA + BOLD + (char) ('A' + row) + RESET + "  " + BORDER_COLOR + "|" + RESET);
-            for (int col = 0; col < size; col++) {
-                String symbol = getCellDisplay(row, col);
-                System.out.print(getSymbolColor(row, col) + BOLD + formatCell(symbol) + RESET);
-                System.out.print(BORDER_COLOR + "|" + RESET);
-            }
-            System.out.println();
-            printBorder();
-        }
-    }
-    private void play() {
+    private boolean play() {
         running = true;
+        returnToMenu = false;
         while (running) {
             clearScreen();
             displayTitle();
@@ -379,6 +439,7 @@ public class MeowDoku {
                     break;
                 case 'X': placeMark(cursorRow, cursorCol); break;
                 case 'E': clearCell(cursorRow, cursorCol); break;
+                case 'T': toggleAutoMark(); break;
                 case 'V':
                     if (validate(false)) {
                         handleWin();
@@ -387,19 +448,27 @@ public class MeowDoku {
                     }
                     break;
                 case 'R': resetBoard(); break;
+                case 'M':
+                    returnToMenu = true;
+                    running = false;
+                    break;
                 case 'H':
                     displayRules();
                     setStatus("Returned to the puzzle.", CYAN);
                     break;
-                case 'Q': running = false; break;
+                case 'Q':
+                    returnToMenu = false;
+                    running = false;
+                    break;
                 default: setStatus("Unknown key.", RED); break;
             }
         }
+        return returnToMenu;
     }
     private void showCheckResults() {
         clearScreen();
         displayTitle();
-        displayBoardWithoutControls();
+        displayBoard(false, "BOARD CHECK");
         System.out.println("\n" + CYAN + BOLD + "  CHECK RESULTS" + RESET);
         validate(true);
         System.out.println();
@@ -408,31 +477,40 @@ public class MeowDoku {
         readKey(GAME_KEYS);
     }
     private static char readKey(String allowedKeys) {
-        if (IS_WINDOWS) {
+        String allowed = allowedKeys.toUpperCase();
+        while (true) {
+            if (IS_WINDOWS && System.console() != null) {
+                try {
+                    ProcessBuilder builder = new ProcessBuilder(
+                            "cmd.exe", "/c", "choice", "/n", "/c", allowed
+                    );
+                    builder.redirectInput(ProcessBuilder.Redirect.INHERIT);
+                    builder.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+                    builder.redirectError(ProcessBuilder.Redirect.DISCARD);
+                    int exitCode = builder.start().waitFor();
+                    if (exitCode >= 1 && exitCode <= allowed.length()) {
+                        return allowed.charAt(exitCode - 1);
+                    }
+                } catch (IOException exception) {
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    return '\0';
+                }
+            }
             try {
-                ProcessBuilder builder = new ProcessBuilder(
-                        "cmd.exe", "/c", "choice", "/n", "/c", allowedKeys
-                );
-                builder.redirectInput(ProcessBuilder.Redirect.INHERIT);
-                builder.redirectOutput(ProcessBuilder.Redirect.DISCARD);
-                builder.redirectError(ProcessBuilder.Redirect.DISCARD);
-                int exitCode = builder.start().waitFor();
-                if (exitCode >= 1 && exitCode <= allowedKeys.length()) {
-                    return allowedKeys.charAt(exitCode - 1);
+                String line = CONSOLE_READER.readLine();
+                if (line == null) {
+                    System.out.println("\n" + GREEN + "Thanks for playing MeowDoku! Goodbye! =^.^=" + RESET);
+                    System.exit(0);
+                }
+                if (line.trim().isEmpty()) continue;
+                char key = Character.toUpperCase(line.trim().charAt(0));
+                if (allowed.indexOf(key) >= 0) {
+                    return key;
                 }
             } catch (IOException exception) {
-            } catch (InterruptedException exception) {
-                Thread.currentThread().interrupt();
                 return '\0';
             }
-        }
-        try {
-            String line = CONSOLE_READER.readLine();
-            if (line == null || line.trim().isEmpty()) return '\0';
-            char key = Character.toUpperCase(line.trim().charAt(0));
-            return allowedKeys.indexOf(key) >= 0 ? key : '\0';
-        } catch (IOException exception) {
-            return '\0';
         }
     }
     private static int selectPuzzle() {
@@ -484,13 +562,17 @@ public class MeowDoku {
         } catch (UnsupportedEncodingException exception) {
             System.err.println("UTF-8 is not available on this Java installation.");
         }
-        int puzzleIndex = selectPuzzle();
-        if (puzzleIndex == -1) {
-            System.out.println(GREEN + "Thanks for playing MeowDoku. Goodbye! =^.^=" + RESET);
-            return;
+        while (true) {
+            int puzzleIndex = selectPuzzle();
+            if (puzzleIndex == -1) {
+                System.out.println(GREEN + "Thanks for playing MeowDoku. Goodbye! =^.^=" + RESET);
+                return;
+            }
+            MeowDoku game = new MeowDoku(puzzleIndex);
+            if (!game.play()) {
+                break;
+            }
         }
-        MeowDoku game = new MeowDoku(puzzleIndex);
-        game.play();
         clearScreen();
         displayTitle();
         System.out.println(GREEN + BOLD + "  Thanks for playing MeowDoku! Goodbye! =^.^=" + RESET);

@@ -10,7 +10,7 @@
         "-Wall",
         "-Wextra",
         "-g",
-        "${workspaceFolder}/MeowDoku.cpp",
+        "${workspaceFolder}/meowdoku.cpp",
         "-o",
         "${workspaceFolder}/MeowDoku.exe"
       ],

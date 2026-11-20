@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 try:
     import msvcrt
 except ImportError:
@@ -23,7 +24,7 @@ EMPTY = '.'
 CAT = 'C'
 MARK = 'X'
 REGION_LABELS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-GAME_KEYS = 'WASDCXEVRHQ'
+GAME_KEYS = 'WASDCXETVRMHQ'
 PUZZLE_NAMES = ["Kitten's First Steps (5x5 Easy)", 'Cat Nap Challenge (6x6 Medium)', 'Meow Master (7x7 Hard)']
 PUZZLE_REGIONS = [[[0, 0, 1, 1, 1], [0, 0, 0, 1, 1], [2, 2, 0, 3, 3], [2, 2, 4, 4, 3], [2, 4, 4, 4, 3]], [[0, 0, 1, 1, 2, 2], [0, 0, 1, 1, 2, 2], [3, 3, 3, 4, 4, 2], [3, 5, 5, 4, 4, 4], [3, 5, 5, 5, 4, 4], [3, 5, 5, 5, 4, 4]], [[0, 0, 0, 1, 1, 2, 2], [0, 3, 0, 1, 1, 2, 2], [3, 3, 3, 1, 4, 4, 2], [3, 3, 5, 5, 4, 4, 4], [6, 3, 5, 5, 5, 4, 4], [6, 6, 6, 5, 5, 5, 4], [6, 6, 6, 6, 5, 5, 5]]]
 
@@ -51,12 +52,17 @@ def clear_screen():
 
 def read_key(allowed_keys):
     allowed = allowed_keys.upper()
+    win_arrows = {'H': 'W', 'P': 'S', 'K': 'A', 'M': 'D'}
+    posix_arrows = {'A': 'W', 'B': 'S', 'D': 'A', 'C': 'D'}
     while True:
-        if msvcrt is not None:
+        if msvcrt is not None and sys.stdin.isatty():
             key = msvcrt.getwch()
-            if key in ('\x00', 'à'):
-                msvcrt.getwch()
-                continue
+            if key in ('\x00', '\xe0'):
+                scan = msvcrt.getwch()
+                if scan in win_arrows:
+                    key = win_arrows[scan]
+                else:
+                    continue
         elif sys.stdin.isatty():
             import termios
             import tty
@@ -65,19 +71,31 @@ def read_key(allowed_keys):
             try:
                 tty.setraw(fd)
                 key = sys.stdin.read(1)
+                if key == '\x1b':
+                    next1 = sys.stdin.read(1)
+                    if next1 == '[':
+                        next2 = sys.stdin.read(1)
+                        key = posix_arrows.get(next2, '')
+                    else:
+                        continue
             finally:
                 termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
         else:
-            key = input('\nEnter a key: ')[:1]
+            line = sys.stdin.readline()
+            if line == '':
+                raise EOFError
+            key = line.strip()[:1]
+        if key == '\x03':
+            raise KeyboardInterrupt
         if key and key.upper() in allowed:
             return key.upper()
 
 def display_title():
     print(CYAN + BOLD + '  +------------------------------------------------------+' + RESET)
     print(CYAN + BOLD + '  |' + RESET + '                                                      ' + CYAN + BOLD + '|' + RESET)
-    print(CYAN + BOLD + '  |' + RESET + GREEN + '       /\\_/\\       M E O W D O K U                 ' + CYAN + BOLD + '|' + RESET)
-    print(CYAN + BOLD + '  |' + RESET + GREEN + '      ( o.o )      ' + MAGENTA + BOLD + 'COLOR TERMINAL EDITION' + RESET + '   ' + CYAN + BOLD + '|' + RESET)
-    print(CYAN + BOLD + '  |' + RESET + GREEN + '       > ^ <       ' + WHITE + 'A Cat Placement Puzzle' + RESET + '      ' + CYAN + BOLD + '|' + RESET)
+    print(CYAN + BOLD + '  |' + RESET + GREEN + '       /\\_/\\       M E O W D O K U                    ' + CYAN + BOLD + '|' + RESET)
+    print(CYAN + BOLD + '  |' + RESET + GREEN + '      ( o.o )      ' + MAGENTA + BOLD + 'COLOR TERMINAL EDITION' + RESET + '             ' + CYAN + BOLD + '|' + RESET)
+    print(CYAN + BOLD + '  |' + RESET + GREEN + '       > ^ <       ' + WHITE + 'A Cat Placement Puzzle' + RESET + '             ' + CYAN + BOLD + '|' + RESET)
     print(CYAN + BOLD + '  |' + RESET + '                                                      ' + CYAN + BOLD + '|' + RESET)
     print(CYAN + BOLD + '  +------------------------------------------------------+' + RESET)
     print()
@@ -92,8 +110,22 @@ class MeowDoku:
         self.cursor_row = 0
         self.cursor_col = 0
         self.running = True
+        self.return_to_menu = False
+        self.move_count = 0
+        self.auto_mark = False
+        self.start_time = time.monotonic()
         self.status_message = 'Welcome! Use W/A/S/D to move, then C to place a cat.'
         self.status_color = CYAN
+
+    def cat_count(self):
+        return sum((1 for row in self.board for cell in row if cell == CAT))
+
+    def elapsed_seconds(self):
+        return max(0, int(time.monotonic() - self.start_time))
+
+    @staticmethod
+    def format_time(seconds):
+        return f'{seconds // 60:02d}:{seconds % 60:02d}'
 
     def coordinate(self, row, col):
         return f"{chr(ord('A') + row)}{col + 1}"
@@ -126,15 +158,16 @@ class MeowDoku:
             print(BORDER_COLOR + '----+' + RESET, end='')
         print()
 
-    def display_board(self, controls=True):
-        heading = 'MEOWDOKU' if controls else 'SOLVED PUZZLE'
+    def display_board(self, controls=True, heading=None):
+        if heading is None:
+            heading = 'MEOWDOKU' if controls else 'SOLVED PUZZLE'
         print(CYAN + BOLD + f'  {heading}' + RESET + WHITE + f'  |  {self.size}x{self.size} PUZZLE' + RESET)
         if controls:
             print(DIM + '  Move the purple selection with W/A/S/D, then choose an action.' + RESET)
         print()
-        print('       ', end='')
+        print('      ', end='')
         for col in range(self.size):
-            print(BLUE + BOLD + f' {col + 1:^3}' + RESET, end='')
+            print(BLUE + BOLD + f' {col + 1:^3} ' + RESET, end='')
         print()
         self.print_border()
         for row in range(self.size):
@@ -154,14 +187,25 @@ class MeowDoku:
                 print(GRAY + '  ' + RESET, end='')
             print(REGION_COLORS[region % len(REGION_COLORS)] + BOLD + REGION_LABELS[region] + RESET, end='')
         print()
+        cats = self.cat_count()
+        cats_color = GREEN if cats == self.size else CYAN
+        auto_label = GREEN + BOLD + 'ON' if self.auto_mark else GRAY + BOLD + 'OFF'
+        print(
+            '  ' + WHITE + BOLD + 'CATS     ' + RESET
+            + cats_color + BOLD + f'{cats} / {self.size}' + RESET
+            + GRAY + '   |   ' + RESET + WHITE + BOLD + 'MOVES  ' + RESET + YELLOW + BOLD + str(self.move_count) + RESET
+            + GRAY + '   |   ' + RESET + WHITE + BOLD + 'AUTO-MARK  ' + RESET + auto_label + RESET
+        )
         if controls:
             print('\n' + CYAN + BOLD + '  CONTROLS' + RESET)
             print('  ' + YELLOW + 'W / A / S / D' + RESET + '  Move selection (up / left / down / right)')
             print('  ' + GREEN + 'C' + RESET + '              Place or remove a ' + GREEN + CAT_ICON + RESET + ' cat')
             print('  ' + YELLOW + 'X' + RESET + '              Place or remove an elimination mark')
             print('  ' + RED + 'E' + RESET + '              Clear the selected cell')
+            print('  ' + MAGENTA + 'T' + RESET + '              Toggle auto-mark assist (ON / OFF)')
             print('  ' + CYAN + 'V' + RESET + '              Check the puzzle')
             print('  ' + MAGENTA + 'R' + RESET + '              Reset the board')
+            print('  ' + YELLOW + 'M' + RESET + '              Return to puzzle menu')
             print('  ' + BLUE + 'H' + RESET + '              Show the rules')
             print('  ' + GRAY + 'Q' + RESET + '              Quit the game')
             print('\n  ' + WHITE + BOLD + 'STATUS  ' + RESET + self.status_color + self.status_message + RESET)
@@ -180,25 +224,56 @@ class MeowDoku:
         else:
             self.set_status('Selected cell: ' + self.coordinate(self.cursor_row, self.cursor_col), CYAN)
 
+    def toggle_auto_mark(self):
+        self.auto_mark = not self.auto_mark
+        if self.auto_mark:
+            self.set_status('Auto-mark assist enabled (places X around new cats).', GREEN)
+        else:
+            self.set_status('Auto-mark assist disabled.', YELLOW)
+
     def place_cat(self, row, col):
+        self.move_count += 1
         if self.board[row][col] == CAT:
             self.board[row][col] = EMPTY
             self.set_status('Cat removed from ' + self.coordinate(row, col) + '.', YELLOW)
         else:
             self.board[row][col] = CAT
-            self.set_status('Cat placed at ' + self.coordinate(row, col) + '.', GREEN)
+            auto_marked = 0
+            if self.auto_mark:
+                target_region = self.region_map[row][col]
+                for r in range(self.size):
+                    for c in range(self.size):
+                        if self.board[r][c] == EMPTY and (
+                            r == row
+                            or c == col
+                            or self.region_map[r][c] == target_region
+                            or (abs(r - row) <= 1 and abs(c - col) <= 1)
+                        ):
+                            self.board[r][c] = MARK
+                            auto_marked += 1
+            if self.auto_mark and auto_marked > 0:
+                self.set_status(
+                    f'Cat placed at {self.coordinate(row, col)} (auto-marked {auto_marked} cell(s)).',
+                    GREEN,
+                )
+            else:
+                self.set_status('Cat placed at ' + self.coordinate(row, col) + '.', GREEN)
 
     def place_mark(self, row, col):
         if self.board[row][col] == CAT:
             self.set_status('Remove the cat before placing a mark.', RED)
         elif self.board[row][col] == MARK:
+            self.move_count += 1
             self.board[row][col] = EMPTY
             self.set_status('Mark removed from ' + self.coordinate(row, col) + '.', YELLOW)
         else:
+            self.move_count += 1
             self.board[row][col] = MARK
             self.set_status('Elimination mark placed at ' + self.coordinate(row, col) + '.', YELLOW)
 
     def clear_cell(self, row, col):
+        if self.board[row][col] != EMPTY:
+            self.move_count += 1
         self.board[row][col] = EMPTY
         self.set_status('Cell ' + self.coordinate(row, col) + ' cleared.', CYAN)
 
@@ -206,9 +281,11 @@ class MeowDoku:
         self.board = [[EMPTY for _ in range(self.size)] for _ in range(self.size)]
         self.cursor_row = 0
         self.cursor_col = 0
+        self.move_count = 0
+        self.start_time = time.monotonic()
         self.set_status('Board has been reset.', GREEN)
 
-    def validate(self, verbose=False):
+    def validate(self):
         valid = True
         total_cats = 0
         messages = []
@@ -247,8 +324,6 @@ class MeowDoku:
             messages.append(f'[i] No rule violations. Place {self.size - total_cats} more cat(s) to win.')
         elif not valid:
             messages.append('[i] Fix the rule violations and check again.')
-        if verbose:
-            return (solved, messages)
         return (solved, messages)
 
     def display_rules(self):
@@ -267,9 +342,9 @@ class MeowDoku:
     def show_check_results(self):
         clear_screen()
         display_title()
-        self.display_board(controls=False)
+        self.display_board(controls=False, heading='BOARD CHECK')
         print('\n' + CYAN + BOLD + '  CHECK RESULTS' + RESET)
-        solved, messages = self.validate(verbose=True)
+        _, messages = self.validate()
         for message in messages:
             color = RED if message.startswith('[!] ') else GREEN if message.startswith('[i] No') else YELLOW
             print('  ' + color + message + RESET)
@@ -279,21 +354,30 @@ class MeowDoku:
     def handle_win(self):
         clear_screen()
         display_title()
-        self.display_board(controls=False)
+        self.display_board(controls=False, heading='SOLVED PUZZLE')
+        stats = f'Moves: {self.move_count}  |  Time: {self.format_time(self.elapsed_seconds())}'
+        left_pad = max(0, (46 - len(stats)) // 2)
+        right_pad = max(0, 46 - len(stats) - left_pad)
         print('\n' + GREEN + BOLD + '  +----------------------------------------------+')
         print('  |             CONGRATULATIONS!                 |')
         print('  |          You solved the puzzle!              |')
         print('  |           All cats are happy!                |')
+        print('  |' + ' ' * left_pad + stats + ' ' * right_pad + '|')
         print('  +----------------------------------------------+' + RESET)
-        print('\n' + WHITE + BOLD + '  Play this puzzle again? (Y/N): ' + RESET, end='', flush=True)
-        answer = read_key('YN')
+        print('\n' + WHITE + BOLD + '  Play again? (Y = Replay / M = Menu / N = Quit): ' + RESET, end='', flush=True)
+        answer = read_key('YNM')
         if answer == 'Y':
             self.reset_board()
+        elif answer == 'M':
+            self.return_to_menu = True
+            self.running = False
         else:
+            self.return_to_menu = False
             self.running = False
 
     def play(self):
         self.running = True
+        self.return_to_menu = False
         while self.running:
             clear_screen()
             display_title()
@@ -316,6 +400,8 @@ class MeowDoku:
                 self.place_mark(self.cursor_row, self.cursor_col)
             elif key == 'E':
                 self.clear_cell(self.cursor_row, self.cursor_col)
+            elif key == 'T':
+                self.toggle_auto_mark()
             elif key == 'V':
                 solved, _ = self.validate()
                 if solved:
@@ -324,11 +410,16 @@ class MeowDoku:
                     self.show_check_results()
             elif key == 'R':
                 self.reset_board()
+            elif key == 'M':
+                self.return_to_menu = True
+                self.running = False
             elif key == 'H':
                 self.display_rules()
                 self.set_status('Returned to the puzzle.', CYAN)
             elif key == 'Q':
+                self.return_to_menu = False
                 self.running = False
+        return self.return_to_menu
 
 def select_puzzle():
     while True:
@@ -347,18 +438,20 @@ def select_puzzle():
 
 def main():
     setup_terminal()
-    puzzle_index = select_puzzle()
-    if puzzle_index == -1:
-        print(GREEN + 'Thanks for playing MeowDoku. Goodbye! =^.^=' + RESET)
-        return
-    game = MeowDoku(puzzle_index)
-    game.play()
+    while True:
+        puzzle_index = select_puzzle()
+        if puzzle_index == -1:
+            print(GREEN + 'Thanks for playing MeowDoku. Goodbye! =^.^=' + RESET)
+            return
+        game = MeowDoku(puzzle_index)
+        if not game.play():
+            break
     clear_screen()
     display_title()
     print(GREEN + BOLD + '  Thanks for playing MeowDoku! Goodbye! =^.^=' + RESET)
 if __name__ == '__main__':
     try:
         main()
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, EOFError):
         clear_screen()
         print('\n' + GREEN + 'Thanks for playing MeowDoku! Goodbye!' + RESET)
