@@ -1,7 +1,7 @@
 # MeowDoku — Color Terminal Edition
 
 **A lightweight, territory-based cat placement logic puzzle implemented identically in C++, Java, and Python.**  
-*CS208 – Programming Languages | Meowdoku Crew*
+*CS208 – Programming Languages | MeowdoCrew*
 
 <p align="center">
   <img src="docs/screenshots/03_gameplay_marks_cats.png" alt="MeowDoku Gameplay with Auto-Mark Assist and Live HUD" width="460">
@@ -135,6 +135,9 @@ MeowDoku/
 
 ## Credits
 
-**Meowdoku Crew** — *CS208: Programming Languages*
-- Sean Salvador
-- Lloyd Hanz L. Lorenzo
+**MeowdoCrew** — *CS208: Programming Languages*
+- Lorenzo, Lloyd Hanz L.
+- Nogueras, Zach Alexandre C.
+- Peñaranda, Noah Francine Adrianna Mireille C.
+- Salvador, Sean Audric R.
+- Serrato, Danielle Sophia S.
