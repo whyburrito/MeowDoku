@@ -1,496 +1,410 @@
-// ============================================================================
-// MeowDoku Console Edition - C++ Implementation
-// MeowdoCrew | CS208 - Programming Languages
-// ============================================================================
-// A lightweight, single-player logic puzzle game played in the terminal.
-// Place exactly one cat (C) per row, column, and region.
-// No two cats may be adjacent (including diagonally).
-// Use elimination marks (X) to help deduce the solution.
-// ============================================================================
-
-#include <iostream>
-#include <vector>
-#include <string>
-#include <sstream>
 #include <algorithm>
-#include <cstdlib>
-#include <cctype>
-#include <ctime>
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-const char EMPTY = '.';
-const char CAT   = 'C';
-const char MARK  = 'X';
-
-// Region labels used for display (letters A-Z for up to 26 regions)
-const std::string REGION_LABELS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-
-// ---------------------------------------------------------------------------
-// Puzzle definition: each puzzle has a size and a region map
-// ---------------------------------------------------------------------------
-struct Puzzle {
-    int size;
-    std::string name;
-    std::vector<std::vector<int>> regionMap; // regionMap[row][col] = region id
+#include <array>
+#include <iostream>
+#include <string>
+#include <vector>
+#ifdef _WIN32
+    #include <conio.h>
+    #include <windows.h>
+#else
+    #include <termios.h>
+    #include <unistd.h>
+#endif
+using namespace std;
+const string RESET = "\033[0m";
+const string BOLD = "\033[1m";
+const string DIM = "\033[2m";
+const string WHITE = "\033[97m";
+const string CYAN = "\033[96m";
+const string BLUE = "\033[94m";
+const string GREEN = "\033[92m";
+const string YELLOW = "\033[93m";
+const string RED = "\033[91m";
+const string MAGENTA = "\033[95m";
+const string GRAY = "\033[90m";
+const string SELECTED_BG = "\033[48;5;57m";
+const string BORDER_COLOR = "\033[38;5;39m";
+const vector<string> REGION_COLORS = {
+    "\033[38;5;45m", "\033[38;5;213m", "\033[38;5;220m",
+    "\033[38;5;114m", "\033[38;5;141m", "\033[38;5;208m",
+    "\033[38;5;81m"
 };
-
-// ---------------------------------------------------------------------------
-// Pre-built puzzles
-// ---------------------------------------------------------------------------
-std::vector<Puzzle> createPuzzles() {
-    std::vector<Puzzle> puzzles;
-
-    // Puzzle 1: 5x5 Easy
+const string CAT_ICON = "\xF0\x9F\x90\xB1";
+const char EMPTY_CELL = '.';
+const char CAT = 'C';
+const char MARK = 'X';
+const string REGION_LABELS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const string GAME_KEYS = "WASDCXEVRHQ";
+const vector<string> PUZZLE_NAMES = {
+    "Kitten's First Steps (5x5 Easy)",
+    "Cat Nap Challenge (6x6 Medium)",
+    "Meow Master (7x7 Hard)"
+};
+const vector<vector<vector<int>>> PUZZLE_REGIONS = {
     {
-        Puzzle p;
-        p.size = 5;
-        p.name = "Kitten's First Steps (5x5 Easy)";
-        p.regionMap = {
-            {0, 0, 1, 1, 1},
-            {0, 0, 0, 1, 1},
-            {2, 2, 0, 3, 3},
-            {2, 2, 4, 4, 3},
-            {2, 4, 4, 4, 3}
-        };
-        puzzles.push_back(p);
-    }
-
-    // Puzzle 2: 6x6 Medium
+        {0, 0, 1, 1, 1},
+        {0, 0, 0, 1, 1},
+        {2, 2, 0, 3, 3},
+        {2, 2, 4, 4, 3},
+        {2, 4, 4, 4, 3}
+    },
     {
-        Puzzle p;
-        p.size = 6;
-        p.name = "Cat Nap Challenge (6x6 Medium)";
-        p.regionMap = {
-            {0, 0, 1, 1, 2, 2},
-            {0, 0, 1, 1, 2, 2},
-            {3, 3, 3, 4, 4, 2},
-            {3, 5, 5, 4, 4, 4},
-            {3, 5, 5, 5, 4, 4},
-            {3, 5, 5, 5, 4, 4}
-        };
-        puzzles.push_back(p);
-    }
-
-    // Puzzle 3: 7x7 Hard
+        {0, 0, 1, 1, 2, 2},
+        {0, 0, 1, 1, 2, 2},
+        {3, 3, 3, 4, 4, 2},
+        {3, 5, 5, 4, 4, 4},
+        {3, 5, 5, 5, 4, 4},
+        {3, 5, 5, 5, 4, 4}
+    },
     {
-        Puzzle p;
-        p.size = 7;
-        p.name = "Meow Master (7x7 Hard)";
-        p.regionMap = {
-            {0, 0, 0, 1, 1, 2, 2},
-            {0, 3, 0, 1, 1, 2, 2},
-            {3, 3, 3, 1, 4, 4, 2},
-            {3, 3, 5, 5, 4, 4, 4},
-            {6, 3, 5, 5, 5, 4, 4},
-            {6, 6, 6, 5, 5, 5, 4},
-            {6, 6, 6, 6, 5, 5, 5}
-        };
-        puzzles.push_back(p);
+        {0, 0, 0, 1, 1, 2, 2},
+        {0, 3, 0, 1, 1, 2, 2},
+        {3, 3, 3, 1, 4, 4, 2},
+        {3, 3, 5, 5, 4, 4, 4},
+        {6, 3, 5, 5, 5, 4, 4},
+        {6, 6, 6, 5, 5, 5, 4},
+        {6, 6, 6, 6, 5, 5, 5}
     }
-
-    return puzzles;
+};
+void setupTerminal() {
+#ifdef _WIN32
+    SetConsoleOutputCP(CP_UTF8);
+    HANDLE output = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (output != INVALID_HANDLE_VALUE) {
+        DWORD mode = 0;
+        if (GetConsoleMode(output, &mode)) {
+            SetConsoleMode(output, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+        }
+    }
+#endif
 }
-
-// ---------------------------------------------------------------------------
-// Game Board class
-// ---------------------------------------------------------------------------
-class MeowdokuBoard {
+void clearScreen() {
+    cout << "\033[2J\033[H" << flush;
+}
+char readKey(const string& allowedKeys) {
+    while (true) {
+        char key = '\0';
+#ifdef _WIN32
+        int input = _getch();
+        if (input == 0 || input == 224) {
+            (void)_getch();
+            continue;
+        }
+        key = static_cast<char>(input);
+#else
+        if (!isatty(STDIN_FILENO)) {
+            string line;
+            if (!getline(cin, line) || line.empty()) return '\0';
+            key = line[0];
+        } else {
+            termios oldSettings{};
+            if (tcgetattr(STDIN_FILENO, &oldSettings) != 0) continue;
+            termios newSettings = oldSettings;
+            newSettings.c_lflag &= static_cast<unsigned long>(~(ICANON | ECHO));
+            newSettings.c_cc[VMIN] = 1;
+            newSettings.c_cc[VTIME] = 0;
+            if (tcsetattr(STDIN_FILENO, TCSANOW, &newSettings) != 0) continue;
+            char input = '\0';
+            ssize_t bytesRead = read(STDIN_FILENO, &input, 1);
+            tcsetattr(STDIN_FILENO, TCSANOW, &oldSettings);
+            if (bytesRead != 1) continue;
+            key = input;
+        }
+#endif
+        if (key >= 'a' && key <= 'z') key = static_cast<char>(key - 'a' + 'A');
+        if (allowedKeys.find(key) != string::npos) return key;
+    }
+}
+void displayTitle() {
+    cout << CYAN << BOLD << "  +------------------------------------------------------+" << RESET << '\n';
+    cout << CYAN << BOLD << "  |" << RESET << "                                                      " << CYAN << BOLD << "|" << RESET << '\n';
+    cout << CYAN << BOLD << "  |" << RESET << GREEN << "       /\\_/\\       M E O W D O K U                 " << CYAN << BOLD << "|" << RESET << '\n';
+    cout << CYAN << BOLD << "  |" << RESET << GREEN << "      ( o.o )      " << MAGENTA << BOLD << "COLOR TERMINAL EDITION" << RESET << "   " << CYAN << BOLD << "|" << RESET << '\n';
+    cout << CYAN << BOLD << "  |" << RESET << GREEN << "       > ^ <       " << WHITE << "A Cat Placement Puzzle" << RESET << "      " << CYAN << BOLD << "|" << RESET << '\n';
+    cout << CYAN << BOLD << "  |" << RESET << "                                                      " << CYAN << BOLD << "|" << RESET << '\n';
+    cout << CYAN << BOLD << "  +------------------------------------------------------+" << RESET << "\n\n";
+}
+class MeowDoku {
 private:
     int size;
-    std::vector<std::vector<int>> regionMap;
-    std::vector<std::vector<char>> board;    // player's board
+    vector<vector<int>> regionMap;
+    vector<vector<char>> board;
     int numRegions;
-
-public:
-    MeowdokuBoard(int sz, const std::vector<std::vector<int>>& regions)
-        : size(sz), regionMap(regions)
-    {
-        board.assign(size, std::vector<char>(size, EMPTY));
-        numRegions = 0;
-        for (int r = 0; r < size; r++)
-            for (int c = 0; c < size; c++)
-                if (regionMap[r][c] + 1 > numRegions)
-                    numRegions = regionMap[r][c] + 1;
+    int cursorRow = 0;
+    int cursorCol = 0;
+    bool running = true;
+    string statusMessage = "Welcome! Use W/A/S/D to move, then C to place a cat.";
+    string statusColor = CYAN;
+    string coordinate(int row, int col) const {
+        return string(1, static_cast<char>('A' + row)) + to_string(col + 1);
     }
-
-    int getSize() const { return size; }
-
-    // Display the board with region labels and player marks
-    void display() const {
-        // Column header
-        std::cout << "\n     ";
-        for (int c = 0; c < size; c++)
-            std::cout << " " << (c + 1) << "  ";
-        std::cout << "\n";
-
-        // Top border
-        std::cout << "   +";
-        for (int c = 0; c < size; c++)
-            std::cout << "---+";
-        std::cout << "\n";
-
-        for (int r = 0; r < size; r++) {
-            // Row label
-            std::cout << " " << (char)('A' + r) << " |";
-            for (int c = 0; c < size; c++) {
-                char cellChar = board[r][c];
-                char regionLabel = REGION_LABELS[regionMap[r][c]];
-                if (cellChar == CAT) {
-                    std::cout << " C |";
-                } else if (cellChar == MARK) {
-                    std::cout << " X |";
+    string cellDisplay(int row, int col) const {
+        if (board[row][col] == CAT) return CAT_ICON;
+        if (board[row][col] == MARK) return "X";
+        return string(1, REGION_LABELS[regionMap[row][col]]);
+    }
+    string formatCell(const string& symbol) const {
+        if (symbol == CAT_ICON) return " " + symbol + " ";
+        return "  " + symbol + " ";
+    }
+    string symbolColor(int row, int col) const {
+        if (board[row][col] == CAT) return GREEN;
+        if (board[row][col] == MARK) return YELLOW;
+        return REGION_COLORS[regionMap[row][col] % REGION_COLORS.size()];
+    }
+    void setStatus(const string& message, const string& color) {
+        statusMessage = message;
+        statusColor = color;
+    }
+    void printBorder() const {
+        cout << "     " << BORDER_COLOR << "+" << RESET;
+        for (int col = 0; col < size; ++col) cout << BORDER_COLOR << "----+" << RESET;
+        cout << '\n';
+    }
+    void displayBoard(bool controls = true) const {
+        cout << CYAN << BOLD << (controls ? "  MEOWDOKU" : "  SOLVED PUZZLE") << RESET
+             << WHITE << "  |  " << size << "x" << size << " PUZZLE" << RESET << '\n';
+        if (controls) cout << DIM << "  Move the purple selection with W/A/S/D, then choose an action." << RESET << '\n';
+        cout << '\n' << "       ";
+        for (int col = 0; col < size; ++col) {
+            cout << BLUE << BOLD << " " << (col + 1 < 10 ? " " : "") << col + 1 << " " << RESET;
+        }
+        cout << '\n';
+        printBorder();
+        for (int row = 0; row < size; ++row) {
+            cout << "  " << MAGENTA << BOLD << static_cast<char>('A' + row) << RESET
+                 << "  " << BORDER_COLOR << "|" << RESET;
+            for (int col = 0; col < size; ++col) {
+                const string symbol = cellDisplay(row, col);
+                if (controls && row == cursorRow && col == cursorCol) {
+                    cout << SELECTED_BG << WHITE << BOLD << formatCell(symbol) << RESET;
                 } else {
-                    std::cout << " " << regionLabel << " |";
+                    cout << symbolColor(row, col) << BOLD << formatCell(symbol) << RESET;
                 }
+                cout << BORDER_COLOR << "|" << RESET;
             }
-            std::cout << "\n";
-
-            // Row border
-            std::cout << "   +";
-            for (int c = 0; c < size; c++)
-                std::cout << "---+";
-            std::cout << "\n";
+            cout << '\n';
+            printBorder();
         }
-
-        // Region legend
-        std::cout << "\n   Regions: ";
-        for (int i = 0; i < numRegions; i++) {
-            if (i > 0) std::cout << ", ";
-            std::cout << REGION_LABELS[i];
+        cout << "\n  " << WHITE << BOLD << "REGIONS  " << RESET;
+        for (int region = 0; region < numRegions; ++region) {
+            if (region > 0) cout << GRAY << "  " << RESET;
+            cout << REGION_COLORS[region % REGION_COLORS.size()] << BOLD
+                 << REGION_LABELS[region] << RESET;
         }
-        std::cout << "\n";
+        cout << '\n';
+        if (controls) {
+            cout << "\n" << CYAN << BOLD << "  CONTROLS" << RESET << '\n';
+            cout << "  " << YELLOW << "W / A / S / D" << RESET << "  Move selection (up / left / down / right)\n";
+            cout << "  " << GREEN << "C" << RESET << "              Place or remove a " << GREEN << CAT_ICON << RESET << " cat\n";
+            cout << "  " << YELLOW << "X" << RESET << "              Place or remove an elimination mark\n";
+            cout << "  " << RED << "E" << RESET << "              Clear the selected cell\n";
+            cout << "  " << CYAN << "V" << RESET << "              Check the puzzle\n";
+            cout << "  " << MAGENTA << "R" << RESET << "              Reset the board\n";
+            cout << "  " << BLUE << "H" << RESET << "              Show the rules\n";
+            cout << "  " << GRAY << "Q" << RESET << "              Quit the game\n";
+            cout << "\n  " << WHITE << BOLD << "STATUS  " << RESET << statusColor << statusMessage << RESET << '\n';
+            cout << "\n  " << DIM << "Press a key: " << RESET << flush;
+        }
     }
-
-    // Place a cat at (row, col) - returns true if placed, false if invalid
-    bool placeCat(int row, int col) {
-        if (!inBounds(row, col)) {
-            std::cout << "   [!] Position out of bounds.\n";
-            return false;
-        }
-        if (board[row][col] == CAT) {
-            std::cout << "   [!] A cat is already here! Removing it.\n";
-            board[row][col] = EMPTY;
-            return true;
-        }
-        board[row][col] = CAT;
-        return true;
-    }
-
-    // Place an elimination mark at (row, col)
-    bool placeMark(int row, int col) {
-        if (!inBounds(row, col)) {
-            std::cout << "   [!] Position out of bounds.\n";
-            return false;
-        }
-        if (board[row][col] == CAT) {
-            std::cout << "   [!] Remove the cat first before marking.\n";
-            return false;
-        }
-        if (board[row][col] == MARK) {
-            std::cout << "   [!] Mark removed.\n";
-            board[row][col] = EMPTY;
-            return true;
-        }
-        board[row][col] = MARK;
-        return true;
-    }
-
-    // Clear a cell
-    bool clearCell(int row, int col) {
-        if (!inBounds(row, col)) {
-            std::cout << "   [!] Position out of bounds.\n";
-            return false;
-        }
-        board[row][col] = EMPTY;
-        return true;
-    }
-
-    // Reset the entire board
-    void resetBoard() {
-        for (int r = 0; r < size; r++)
-            for (int c = 0; c < size; c++)
-                board[r][c] = EMPTY;
-        std::cout << "   Board has been reset.\n";
-    }
-
-    // Validate the current board state and check for a win
-    // Returns true if the puzzle is solved correctly
-    bool validate(bool verbose) const {
+    bool validate(bool verbose, vector<string>& messages) const {
         bool valid = true;
         int totalCats = 0;
-
-        // Count cats per row
-        for (int r = 0; r < size; r++) {
+        for (int row = 0; row < size; ++row) {
             int count = 0;
-            for (int c = 0; c < size; c++)
-                if (board[r][c] == CAT) count++;
+            for (int col = 0; col < size; ++col) if (board[row][col] == CAT) ++count;
             totalCats += count;
             if (count > 1) {
-                if (verbose)
-                    std::cout << "   [!] Row " << (char)('A' + r) << " has more than one cat!\n";
                 valid = false;
+                messages.push_back("[!] Row " + string(1, static_cast<char>('A' + row)) + " has more than one cat.");
             }
         }
-
-        // Count cats per column
-        for (int c = 0; c < size; c++) {
+        for (int col = 0; col < size; ++col) {
             int count = 0;
-            for (int r = 0; r < size; r++)
-                if (board[r][c] == CAT) count++;
+            for (int row = 0; row < size; ++row) if (board[row][col] == CAT) ++count;
             if (count > 1) {
-                if (verbose)
-                    std::cout << "   [!] Column " << (c + 1) << " has more than one cat!\n";
                 valid = false;
+                messages.push_back("[!] Column " + to_string(col + 1) + " has more than one cat.");
             }
         }
-
-        // Count cats per region
-        std::vector<int> regionCount(numRegions, 0);
-        for (int r = 0; r < size; r++)
-            for (int c = 0; c < size; c++)
-                if (board[r][c] == CAT)
-                    regionCount[regionMap[r][c]]++;
-        for (int i = 0; i < numRegions; i++) {
-            if (regionCount[i] > 1) {
-                if (verbose)
-                    std::cout << "   [!] Region " << REGION_LABELS[i] << " has more than one cat!\n";
-                valid = false;
+        vector<int> regionCount(numRegions, 0);
+        for (int row = 0; row < size; ++row) {
+            for (int col = 0; col < size; ++col) {
+                if (board[row][col] == CAT) ++regionCount[regionMap[row][col]];
             }
         }
-
-        // Check adjacency (no two cats touching, including diagonals)
-        int dr[] = {-1, -1, -1, 0, 0, 1, 1, 1};
-        int dc[] = {-1, 0, 1, -1, 1, -1, 0, 1};
-        for (int r = 0; r < size; r++) {
-            for (int c = 0; c < size; c++) {
-                if (board[r][c] == CAT) {
-                    for (int d = 0; d < 8; d++) {
-                        int nr = r + dr[d];
-                        int nc = c + dc[d];
-                        if (inBounds(nr, nc) && board[nr][nc] == CAT) {
-                            if (verbose)
-                                std::cout << "   [!] Cats at " << (char)('A' + r) << (c + 1)
-                                          << " and " << (char)('A' + nr) << (nc + 1)
-                                          << " are adjacent!\n";
-                            valid = false;
-                        }
+        for (int region = 0; region < numRegions; ++region) {
+            if (regionCount[region] > 1) {
+                valid = false;
+                messages.push_back("[!] Region " + string(1, REGION_LABELS[region]) + " has more than one cat.");
+            }
+        }
+        const array<pair<int, int>, 4> directions = {{{0, 1}, {1, -1}, {1, 0}, {1, 1}}};
+        for (int row = 0; row < size; ++row) {
+            for (int col = 0; col < size; ++col) {
+                if (board[row][col] != CAT) continue;
+                for (const auto& direction : directions) {
+                    int nextRow = row + direction.first;
+                    int nextCol = col + direction.second;
+                    if (nextRow >= 0 && nextRow < size && nextCol >= 0 && nextCol < size
+                        && board[nextRow][nextCol] == CAT) {
+                        valid = false;
+                        messages.push_back("[!] Cats at " + coordinate(row, col) + " and "
+                                           + coordinate(nextRow, nextCol) + " are adjacent.");
                     }
                 }
             }
         }
-
-        // Check win: exactly one cat per row/col/region and no adjacency issues
-        if (valid && totalCats == size) {
-            return true;
+        const bool solved = valid && totalCats == size;
+        if (valid && !solved) {
+            messages.push_back("[i] No rule violations. Place " + to_string(size - totalCats) + " more cat(s) to win.");
+        } else if (!valid) {
+            messages.push_back("[i] Fix the rule violations and check again.");
         }
-
-        if (valid && totalCats < size && verbose) {
-            std::cout << "   [i] No rule violations so far. Place "
-                      << (size - totalCats) << " more cat(s) to win!\n";
-        }
-
-        return false;
+        (void)verbose;
+        return solved;
     }
-
-private:
-    bool inBounds(int row, int col) const {
-        return row >= 0 && row < size && col >= 0 && col < size;
+    void displayRules() const {
+        clearScreen();
+        displayTitle();
+        cout << CYAN << BOLD << "  HOW TO PLAY" << RESET << '\n';
+        cout << "  1. Place exactly " << GREEN << "ONE " << CAT_ICON << " cat" << RESET << " in each row.\n";
+        cout << "  2. Place exactly " << GREEN << "ONE " << CAT_ICON << " cat" << RESET << " in each column.\n";
+        cout << "  3. Place exactly " << GREEN << "ONE " << CAT_ICON << " cat" << RESET << " in each region.\n";
+        cout << "  4. No two cats may touch, including diagonally.\n\n";
+        cout << "  Empty cells show their region letter.\n";
+        cout << "  The selected cell has a purple background.\n\n";
+        cout << DIM << "  Press any game-control key to return to the puzzle." << RESET << flush;
+        readKey(GAME_KEYS);
+    }
+    void resetBoard() {
+        for (auto& row : board) fill(row.begin(), row.end(), EMPTY_CELL);
+        cursorRow = 0;
+        cursorCol = 0;
+        setStatus("Board has been reset.", GREEN);
+    }
+    void handleWin() {
+        clearScreen();
+        displayTitle();
+        displayBoard(false);
+        cout << "\n" << GREEN << BOLD;
+        cout << "  +----------------------------------------------+\n";
+        cout << "  |             CONGRATULATIONS!                 |\n";
+        cout << "  |          You solved the puzzle!              |\n";
+        cout << "  |           All cats are happy!                |\n";
+        cout << "  +----------------------------------------------+" << RESET << "\n\n";
+        cout << WHITE << BOLD << "  Play this puzzle again? (Y/N): " << RESET << flush;
+        char answer = readKey("YN");
+        if (answer == 'Y') resetBoard();
+        else running = false;
+    }
+    void showCheckResults() {
+        clearScreen();
+        displayTitle();
+        displayBoard(false);
+        cout << "\n" << CYAN << BOLD << "  CHECK RESULTS" << RESET << '\n';
+        vector<string> messages;
+        const bool solved = validate(true, messages);
+        (void)solved;
+        for (const string& message : messages) {
+            const string color = message.rfind("[!] ", 0) == 0 ? RED
+                : (message.rfind("[i] No", 0) == 0 ? GREEN : YELLOW);
+            cout << "  " << color << message << RESET << '\n';
+        }
+        cout << '\n' << DIM << "  Press any game-control key to continue..." << RESET << flush;
+        readKey(GAME_KEYS);
+    }
+public:
+    explicit MeowDoku(int puzzleIndex)
+        : size(static_cast<int>(PUZZLE_REGIONS[puzzleIndex].size())),
+          regionMap(PUZZLE_REGIONS[puzzleIndex]),
+          board(size, vector<char>(size, EMPTY_CELL)),
+          numRegions(0) {
+        for (const auto& row : regionMap) {
+            for (int region : row) numRegions = max(numRegions, region + 1);
+        }
+    }
+    void play() {
+        running = true;
+        while (running) {
+            clearScreen();
+            displayTitle();
+            displayBoard(true);
+            char key = readKey(GAME_KEYS);
+            switch (key) {
+                case 'W': cursorRow = max(0, cursorRow - 1); setStatus("Selected cell: " + coordinate(cursorRow, cursorCol), CYAN); break;
+                case 'A': cursorCol = max(0, cursorCol - 1); setStatus("Selected cell: " + coordinate(cursorRow, cursorCol), CYAN); break;
+                case 'S': cursorRow = min(size - 1, cursorRow + 1); setStatus("Selected cell: " + coordinate(cursorRow, cursorCol), CYAN); break;
+                case 'D': cursorCol = min(size - 1, cursorCol + 1); setStatus("Selected cell: " + coordinate(cursorRow, cursorCol), CYAN); break;
+                case 'C':
+                    if (board[cursorRow][cursorCol] == CAT) {
+                        board[cursorRow][cursorCol] = EMPTY_CELL;
+                        setStatus("Cat removed from " + coordinate(cursorRow, cursorCol) + ".", YELLOW);
+                    } else {
+                        board[cursorRow][cursorCol] = CAT;
+                        setStatus("Cat placed at " + coordinate(cursorRow, cursorCol) + ".", GREEN);
+                    }
+                    {
+                        vector<string> messages;
+                        if (validate(false, messages)) handleWin();
+                    }
+                    break;
+                case 'X':
+                    if (board[cursorRow][cursorCol] == CAT) {
+                        setStatus("Remove the cat before placing a mark.", RED);
+                    } else if (board[cursorRow][cursorCol] == MARK) {
+                        board[cursorRow][cursorCol] = EMPTY_CELL;
+                        setStatus("Mark removed from " + coordinate(cursorRow, cursorCol) + ".", YELLOW);
+                    } else {
+                        board[cursorRow][cursorCol] = MARK;
+                        setStatus("Elimination mark placed at " + coordinate(cursorRow, cursorCol) + ".", YELLOW);
+                    }
+                    break;
+                case 'E':
+                    board[cursorRow][cursorCol] = EMPTY_CELL;
+                    setStatus("Cell " + coordinate(cursorRow, cursorCol) + " cleared.", CYAN);
+                    break;
+                case 'V': {
+                    vector<string> messages;
+                    if (validate(false, messages)) handleWin();
+                    else showCheckResults();
+                    break;
+                }
+                case 'R': resetBoard(); break;
+                case 'H': displayRules(); setStatus("Returned to the puzzle.", CYAN); break;
+                case 'Q': running = false; break;
+                default: break;
+            }
+        }
     }
 };
-
-// ---------------------------------------------------------------------------
-// Parse user coordinate input like "A1", "B3", etc.
-// ---------------------------------------------------------------------------
-bool parseCoord(const std::string& input, int size, int& row, int& col) {
-    if (input.length() < 2) return false;
-    char rowChar = std::toupper(input[0]);
-    if (rowChar < 'A' || rowChar >= 'A' + size) return false;
-    row = rowChar - 'A';
-
-    std::string colStr = input.substr(1);
-    for (char ch : colStr)
-        if (!std::isdigit(ch)) return false;
-
-    col = std::stoi(colStr) - 1;
-    if (col < 0 || col >= size) return false;
-    return true;
+int selectPuzzle() {
+    while (true) {
+        clearScreen();
+        displayTitle();
+        cout << CYAN << BOLD << "  SELECT A PUZZLE\n\n" << RESET;
+        for (int i = 0; i < static_cast<int>(PUZZLE_NAMES.size()); ++i) {
+            const string color = i == 0 ? GREEN : (i == 1 ? YELLOW : RED);
+            cout << "  " << WHITE << (i + 1) << ". " << RESET << color << PUZZLE_NAMES[i] << RESET << '\n';
+        }
+        cout << "  " << GRAY << "Q. Quit" << RESET << "\n\n";
+        cout << WHITE << BOLD << "  Press 1, 2, 3, or Q: " << RESET << flush;
+        char choice = readKey("123Q");
+        if (choice == 'Q') return -1;
+        return choice - '1';
+    }
 }
-
-// ---------------------------------------------------------------------------
-// Display title screen
-// ---------------------------------------------------------------------------
-void displayTitle() {
-    std::cout << "\n";
-    std::cout << "  ╔══════════════════════════════════════════════════╗\n";
-    std::cout << "  ║                                                  ║\n";
-    std::cout << "  ║      /\\_/\\    M E O W D O K U                    ║\n";
-    std::cout << "  ║     ( o.o )   Console Edition                    ║\n";
-    std::cout << "  ║      > ^ <                                       ║\n";
-    std::cout << "  ║     /|   |\\   A Cat Placement Puzzle             ║\n";
-    std::cout << "  ║                                                  ║\n";
-    std::cout << "  ║   MeowdoCrew | CS208 - Programming Languages    ║\n";
-    std::cout << "  ║                                                  ║\n";
-    std::cout << "  ╚══════════════════════════════════════════════════╝\n";
-    std::cout << "\n";
-}
-
-// ---------------------------------------------------------------------------
-// Display rules
-// ---------------------------------------------------------------------------
-void displayRules() {
-    std::cout << "\n  ===== HOW TO PLAY =====\n\n";
-    std::cout << "  Goal: Place exactly ONE cat (C) in each row, column,\n";
-    std::cout << "        and region of the grid.\n\n";
-    std::cout << "  Rules:\n";
-    std::cout << "    1. Each ROW must contain exactly one cat.\n";
-    std::cout << "    2. Each COLUMN must contain exactly one cat.\n";
-    std::cout << "    3. Each REGION (marked by letters A, B, C...) must\n";
-    std::cout << "       contain exactly one cat.\n";
-    std::cout << "    4. No two cats can be ADJACENT to each other\n";
-    std::cout << "       (horizontally, vertically, or diagonally).\n\n";
-    std::cout << "  Commands:\n";
-    std::cout << "    c <pos>   - Place/remove a cat (e.g., c A1)\n";
-    std::cout << "    x <pos>   - Place/remove an elimination mark (e.g., x B3)\n";
-    std::cout << "    e <pos>   - Clear a cell (e.g., e C2)\n";
-    std::cout << "    check     - Validate your current board\n";
-    std::cout << "    reset     - Clear the entire board\n";
-    std::cout << "    rules     - Show these rules again\n";
-    std::cout << "    quit      - Exit the game\n\n";
-}
-
-// ---------------------------------------------------------------------------
-// Main game loop
-// ---------------------------------------------------------------------------
 int main() {
+    setupTerminal();
+    const int puzzleIndex = selectPuzzle();
+    if (puzzleIndex == -1) {
+        cout << GREEN << "Thanks for playing MeowDoku. Goodbye! =^.^=" << RESET << '\n';
+        return 0;
+    }
+    MeowDoku game(puzzleIndex);
+    game.play();
+    clearScreen();
     displayTitle();
-
-    std::vector<Puzzle> puzzles = createPuzzles();
-
-    // Puzzle selection
-    std::cout << "  Select a puzzle:\n\n";
-    for (size_t i = 0; i < puzzles.size(); i++) {
-        std::cout << "    " << (i + 1) << ". " << puzzles[i].name << "\n";
-    }
-    std::cout << "\n  Enter choice (1-" << puzzles.size() << "): ";
-
-    int choice = 0;
-    std::string line;
-    std::getline(std::cin, line);
-    std::istringstream iss(line);
-    iss >> choice;
-
-    if (choice < 1 || choice > (int)puzzles.size()) {
-        std::cout << "  Invalid choice. Defaulting to puzzle 1.\n";
-        choice = 1;
-    }
-
-    Puzzle& selectedPuzzle = puzzles[choice - 1];
-    MeowdokuBoard board(selectedPuzzle.size, selectedPuzzle.regionMap);
-
-    std::cout << "\n  Loading: " << selectedPuzzle.name << "\n";
-    displayRules();
-
-    // Game loop
-    bool running = true;
-    while (running) {
-        board.display();
-
-        std::cout << "\n  >> ";
-        if (!std::getline(std::cin, line)) break;
-
-        // Trim whitespace
-        size_t start = line.find_first_not_of(" \t");
-        if (start == std::string::npos) continue;
-        line = line.substr(start);
-
-        // Parse command
-        if (line.empty()) continue;
-
-        // Convert first part to lowercase for command matching
-        std::string cmdLower = line;
-        std::transform(cmdLower.begin(), cmdLower.end(), cmdLower.begin(), ::tolower);
-
-        if (cmdLower == "quit" || cmdLower == "exit" || cmdLower == "q") {
-            std::cout << "\n  Thanks for playing MeowDoku! Goodbye! =^.^=\n\n";
-            running = false;
-        }
-        else if (cmdLower == "rules" || cmdLower == "help" || cmdLower == "h") {
-            displayRules();
-        }
-        else if (cmdLower == "reset") {
-            board.resetBoard();
-        }
-        else if (cmdLower == "check" || cmdLower == "validate") {
-            std::cout << "\n";
-            if (board.validate(true)) {
-                std::cout << "\n";
-                std::cout << "  ╔══════════════════════════════════════════╗\n";
-                std::cout << "  ║                                          ║\n";
-                std::cout << "  ║    /\\_/\\   CONGRATULATIONS!               ║\n";
-                std::cout << "  ║   ( ^.^ )  You solved the puzzle!        ║\n";
-                std::cout << "  ║    > ^ <   All cats are happy! =^.^=     ║\n";
-                std::cout << "  ║                                          ║\n";
-                std::cout << "  ╚══════════════════════════════════════════╝\n";
-                std::cout << "\n  Play again? (y/n): ";
-                std::getline(std::cin, line);
-                if (line.empty() || std::tolower(line[0]) != 'y') {
-                    running = false;
-                } else {
-                    board.resetBoard();
-                }
-            }
-        }
-        else if (cmdLower.length() >= 2 && (cmdLower[0] == 'c' || cmdLower[0] == 'x' || cmdLower[0] == 'e') && cmdLower[1] == ' ') {
-            char cmd = cmdLower[0];
-            std::string coord = line.substr(2);
-            // Trim coord
-            size_t cs = coord.find_first_not_of(" \t");
-            if (cs != std::string::npos) coord = coord.substr(cs);
-            size_t ce = coord.find_last_not_of(" \t");
-            if (ce != std::string::npos) coord = coord.substr(0, ce + 1);
-
-            int row, col;
-            if (parseCoord(coord, board.getSize(), row, col)) {
-                bool success = false;
-                if (cmd == 'c') {
-                    success = board.placeCat(row, col);
-                } else if (cmd == 'x') {
-                    success = board.placeMark(row, col);
-                } else if (cmd == 'e') {
-                    success = board.clearCell(row, col);
-                }
-
-                // Auto-check for win after placing a cat
-                if (success && cmd == 'c') {
-                    if (board.validate(false)) {
-                        board.display();
-                        std::cout << "\n";
-                        std::cout << "  ╔══════════════════════════════════════════╗\n";
-                        std::cout << "  ║                                          ║\n";
-                        std::cout << "  ║    /\\_/\\   CONGRATULATIONS!               ║\n";
-                        std::cout << "  ║   ( ^.^ )  You solved the puzzle!        ║\n";
-                        std::cout << "  ║    > ^ <   All cats are happy! =^.^=     ║\n";
-                        std::cout << "  ║                                          ║\n";
-                        std::cout << "  ╚══════════════════════════════════════════╝\n";
-                        std::cout << "\n  Play again? (y/n): ";
-                        std::getline(std::cin, line);
-                        if (line.empty() || std::tolower(line[0]) != 'y') {
-                            running = false;
-                        } else {
-                            board.resetBoard();
-                        }
-                    }
-                }
-            } else {
-                std::cout << "   [!] Invalid position. Use format like A1, B3, etc.\n";
-            }
-        }
-        else {
-            std::cout << "   [!] Unknown command. Type 'rules' for help.\n";
-        }
-    }
-
+    cout << GREEN << BOLD << "  Thanks for playing MeowDoku! Goodbye! =^.^=" << RESET << '\n';
     return 0;
 }
